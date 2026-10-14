@@ -1,0 +1,10 @@
+{
+  "allowedRoots": [
+    {
+      "path": "~/vault",
+      "allowReadWrite": true,
+      "description": "Second-brain vault for the life companion only"
+    }
+  ],
+  "blockedPatterns": []
+}
