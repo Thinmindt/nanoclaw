@@ -17,8 +17,9 @@ host instead, by the settings below.
 | It sees only the vault | Mount allowlist (`host/mount-allowlist.json`) with one read-write root |
 | No credentials in the container | The credential gateway injects tokens at request time |
 | No internet except through the gateway | `NANOCLAW_EGRESS_LOCKDOWN=true` (`host/governance.env`) |
-| Gmail is read-only | A `gmail.readonly` token, enforced by Google |
+| Gmail is read-only | A `gmail.readonly` grant, enforced by Google, plus a gateway rule blocking every method but GET to `gmail.googleapis.com` |
 | TickTick writes need approval | A gateway rule holding writes to `api.ticktick.com`; reads skip the card through `NANOCLAW_GATEWAY_READ_ONLY_HOSTS` |
+| TickTick tasks are never deleted or completed | A gateway rule blocking DELETE and `.../complete` on `api.ticktick.com` |
 | Vault changes can be undone | `host/vault-sync.sh` commits and pushes on the host and never force-pushes |
 | It cannot add tools or packages | Self-modification always needs an admin approval card |
 | It cannot run admin commands | `cli_scope: group` (the default) |
@@ -70,21 +71,50 @@ Run these on the NanoClaw host, as the NanoClaw user, from the checkout.
    installed, then wire the private `#steward` channel to this group with
    `/manage-channels`. Choose a separate agent (not shared), set the messaging
    group's `unknown_sender_policy` to `strict`, and the wiring's `sender_scope`
-   to `known`. Make Greg the owner.
-6. **Credentials.** Add the TickTick and Gmail tokens to the gateway, scoped to
-   this agent only, and add a rule that holds writes to `api.ticktick.com` for
-   approval. The exact commands depend on the gateway; see its install skill
-   (`/add-onecli`).
-7. **Tools.** Wire the TickTick and Gmail MCP servers. See "Open items".
+   to `known`. Make Greg the owner. To let another household member talk to
+   it too, add their Discord user and make them a member:
+   `ncl members add --user discord:<their id> --group <group-id>`. They see
+   everything Steward posts, Gmail summaries included.
+6. **Credentials.** In the gateway, connect TickTick (OAuth app with scopes
+   `tasks:read tasks:write`) and Gmail (scope `gmail.readonly` only), each
+   scoped to `api.ticktick.com` or `gmail.googleapis.com`, injected as the
+   `Authorization` header, and granted to this agent only. Then add the rules
+   from the table above: block non-GET to Gmail, block DELETE and complete on
+   TickTick, and hold other TickTick writes for approval. The exact commands
+   depend on the gateway; see its install skill (`/add-onecli`).
+7. **Tools.** Nothing to do: `mcp.json` starts the TickTick and Gmail servers
+   in `servers/` with the container's own Bun when the agent starts.
 8. **Start.** Resume the four tasks with `ncl tasks resume`, send a test
    capture in `#steward`, and run one digest by hand with `ncl tasks run`.
 
+## Tools
+
+`servers/ticktick.ts` and `servers/gmail.ts` are small MCP servers with no
+dependencies. They run inside the agent's container and send every request
+with `Authorization: Bearer placeholder` through the gateway's proxy
+(`HTTPS_PROXY` and the gateway CA, which NanoClaw puts in the container's
+environment). The gateway swaps in the real token, so no token is ever in the
+container.
+
+| Server | Tools |
+| --- | --- |
+| `ticktick` | `list_projects`, `list_tasks`, `get_task`, `create_task`, `update_task`; `complete_task` only with `TICKTICK_ALLOW_COMPLETE=1` in `mcp.json`. No delete. |
+| `gmail` | `search_mail`, `read_message`, `read_thread`. GET only; email bodies come back marked as untrusted. |
+
+The limits in the servers keep the agent on the right path, but they are not
+the fence: the agent also has a shell and could call either API directly
+through the same proxy. The gateway rules in step 6 are what hold.
+
+Tests run with Bun and use fake APIs:
+
+```bash
+cd templates/life-companion/servers && bun test
+```
+
 ## Open items
 
-- The TickTick and Gmail tools were first written as Python servers that hold
-  their own tokens on the host. NanoClaw's own pattern is different: the tool
-  runs in the container and the gateway injects the token, and egress lockdown
-  blocks containers from reaching host-run servers anyway. The tools need
-  porting to that pattern before step 7.
-- Gmail tokens expire hourly. Check whether the gateway can refresh a Google
-  OAuth token before relying on it for Gmail.
+- The servers have only been tested against fake APIs. The TickTick endpoints
+  and date format were written from the public Open API docs and need one real
+  run.
+- Gmail tokens expire hourly. Check that the gateway refreshes the Google OAuth
+  token before relying on it for the digest.
