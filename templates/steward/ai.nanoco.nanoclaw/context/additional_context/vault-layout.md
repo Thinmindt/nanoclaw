@@ -32,4 +32,4 @@ was filed where, tasks added, and anything left for tomorrow.
 
 - Delete a note. Move it to `Archive/` and link it from `Archive/Archive.md`.
 - Edit `.git/` or `.obsidian/`.
-- Rename a note Greg wrote himself unless he asks.
+- Rename a note Greg wrote unless Greg asks.

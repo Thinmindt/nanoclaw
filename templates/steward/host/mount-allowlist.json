@@ -3,7 +3,7 @@
     {
       "path": "~/vault",
       "allowReadWrite": true,
-      "description": "Second-brain vault for the life companion only"
+      "description": "Second-brain vault for Steward only"
     }
   ],
   "blockedPatterns": []
