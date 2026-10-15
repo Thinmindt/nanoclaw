@@ -1,6 +1,0 @@
-[Unit]
-Description=Sync the life companion's vault with GitHub
-
-[Service]
-Type=oneshot
-ExecStart=%h/nanoclaw/templates/life-companion/host/vault-sync.sh

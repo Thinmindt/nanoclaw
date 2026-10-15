@@ -1,0 +1,6 @@
+[Unit]
+Description=Sync Steward's vault with GitHub
+
+[Service]
+Type=oneshot
+ExecStart=%h/nanoclaw/templates/steward/host/vault-sync.sh

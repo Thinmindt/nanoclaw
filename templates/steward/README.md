@@ -1,4 +1,4 @@
-# Life companion template
+# Steward template
 
 An agent that keeps a second-brain Obsidian vault, TickTick priorities and a
 read-only view of Gmail, and reports in one Discord digest. The rules it follows
@@ -46,7 +46,7 @@ Run these on the NanoClaw host, as the NanoClaw user, from the checkout.
    deploy key that can write to that repo only. Install the mount allowlist:
 
    ```bash
-   pnpm exec tsx setup/index.ts --step mounts --force -- --json "$(cat templates/life-companion/host/mount-allowlist.json)"
+   pnpm exec tsx setup/index.ts --step mounts --force -- --json "$(cat templates/steward/host/mount-allowlist.json)"
    ```
 
 3. **Vault sync.** Install the timer so the host commits and pushes every five
@@ -54,20 +54,20 @@ Run these on the NanoClaw host, as the NanoClaw user, from the checkout.
 
    ```bash
    mkdir -p ~/.config/systemd/user
-   cp templates/life-companion/host/vault-sync.{service,timer} ~/.config/systemd/user/
+   cp templates/steward/host/vault-sync.{service,timer} ~/.config/systemd/user/
    systemctl --user daemon-reload && systemctl --user enable --now vault-sync.timer
    ```
 
 4. **Stamp the agent and give it the vault.**
 
    ```bash
-   ncl groups create --template life-companion
+   ncl groups create --template steward
    ncl groups config add-mount --id <group-id> --host ~/vault/second-brain --container vault
    ncl groups config update --id <group-id> --timezone <IANA name>
    ```
 
 5. **Wire Discord.** Add the Discord channel with `/add-discord` if it is not
-   installed, then wire the private `#companion` channel to this group with
+   installed, then wire the private `#steward` channel to this group with
    `/manage-channels`. Choose a separate agent (not shared), set the messaging
    group's `unknown_sender_policy` to `strict`, and the wiring's `sender_scope`
    to `known`. Make yourself the owner.
@@ -77,7 +77,7 @@ Run these on the NanoClaw host, as the NanoClaw user, from the checkout.
    (`/add-onecli`).
 7. **Tools.** Wire the TickTick and Gmail MCP servers. See "Open items".
 8. **Start.** Resume the four tasks with `ncl tasks resume`, send a test
-   capture in `#companion`, and run one digest by hand with `ncl tasks run`.
+   capture in `#steward`, and run one digest by hand with `ncl tasks run`.
 
 ## Open items
 
