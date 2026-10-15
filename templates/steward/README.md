@@ -71,10 +71,7 @@ Run these on the NanoClaw host, as the NanoClaw user, from the checkout.
    installed, then wire the private `#steward` channel to this group with
    `/manage-channels`. Choose a separate agent (not shared), set the messaging
    group's `unknown_sender_policy` to `strict`, and the wiring's `sender_scope`
-   to `known`. Make yourself the owner. To let another household member talk to
-   it too, add their Discord user and make them a member:
-   `ncl members add --user discord:<their id> --group <group-id>`. They see
-   everything Steward posts, Gmail summaries included.
+   to `known`. Make yourself the owner.
 6. **Credentials.** In the gateway, connect TickTick (OAuth app with scopes
    `tasks:read tasks:write`) and Gmail (scope `gmail.readonly` only), each
    scoped to `api.ticktick.com` or `gmail.googleapis.com`, injected as the
@@ -108,7 +105,7 @@ through the same proxy. The gateway rules in step 6 are what hold.
 Tests run with Bun and use fake APIs:
 
 ```bash
-cd templates/life-companion/servers && bun test
+cd templates/steward/servers && bun test
 ```
 
 ## Open items

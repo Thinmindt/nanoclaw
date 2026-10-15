@@ -1,5 +1,5 @@
 /**
- * TickTick tools for the life companion.
+ * TickTick tools for Steward.
  *
  * The agent can read tasks, add tasks and change a task's title, notes, due
  * date or priority. Completing is offered only when TICKTICK_ALLOW_COMPLETE=1,

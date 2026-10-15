@@ -1,5 +1,5 @@
 /**
- * Gmail tools for the life companion: read-only.
+ * Gmail tools for Steward: read-only.
  *
  * Only GET requests exist here. Read-only is held for real by the credential
  * (a gmail.readonly grant) and by the gateway's rules for gmail.googleapis.com,
