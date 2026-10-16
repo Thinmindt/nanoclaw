@@ -483,6 +483,33 @@ export function attachmentFetchUrl(att: { url?: unknown; size?: unknown }): stri
   return parsed.toString();
 }
 
+/** Redirect hops followed for one attachment before giving up. */
+const MAX_ATTACHMENT_REDIRECTS = 3;
+
+/**
+ * Download an approved attachment URL. Redirects are followed by hand so every
+ * hop passes `attachmentFetchUrl` again; an approved CDN link that redirects
+ * anywhere else is refused before any request reaches the new address.
+ */
+export async function fetchAttachmentByUrl(url: string, fetchImpl: typeof fetch = fetch): Promise<Buffer> {
+  let current = url;
+  for (let hop = 0; hop <= MAX_ATTACHMENT_REDIRECTS; hop++) {
+    const res = await fetchImpl(current, { redirect: 'manual' });
+    if (res.status >= 300 && res.status < 400) {
+      const location = res.headers.get('location');
+      const next = location ? attachmentFetchUrl({ url: new URL(location, current).toString() }) : null;
+      if (!next) throw new Error(`redirect to a disallowed location: ${location ?? '(none)'}`);
+      current = next;
+      continue;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length > MAX_URL_ATTACHMENT_BYTES) throw new Error(`too large: ${buffer.length} bytes`);
+    return buffer;
+  }
+  throw new Error(`more than ${MAX_ATTACHMENT_REDIRECTS} redirects`);
+}
+
 export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter {
   const { adapter } = config;
   // The instance name becomes a webhook route segment (the route regex is
@@ -538,11 +565,7 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
           }
         } else if (url) {
           try {
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const buffer = Buffer.from(await res.arrayBuffer());
-            if (buffer.length > MAX_URL_ATTACHMENT_BYTES) throw new Error(`too large: ${buffer.length} bytes`);
-            entry.data = buffer.toString('base64');
+            entry.data = (await fetchAttachmentByUrl(url)).toString('base64');
           } catch (err) {
             log.warn('Failed to download attachment', { type: att.type, err });
           }
