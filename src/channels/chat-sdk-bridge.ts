@@ -458,6 +458,31 @@ export function appendRawText(
   serialized.text = text ? `${text}\n\n${extra}` : extra;
 }
 
+/** Hosts whose attachment URLs the host may fetch directly, without credentials. */
+const DIRECT_ATTACHMENT_HOSTS = new Set(['cdn.discordapp.com', 'media.discordapp.net']);
+
+/** Largest attachment fetched by URL; anything bigger reaches the agent as metadata only. */
+export const MAX_URL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Some adapters (Discord) hand over only a public CDN URL, no `fetchData()`.
+ * Decide whether that URL may be fetched: https, a known CDN host, and a size
+ * within the cap. Anything else returns null and the attachment stays metadata
+ * only, so a platform payload cannot point the host at an arbitrary address.
+ */
+export function attachmentFetchUrl(att: { url?: unknown; size?: unknown }): string | null {
+  if (typeof att.url !== 'string') return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(att.url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== 'https:' || !DIRECT_ATTACHMENT_HOSTS.has(parsed.hostname)) return null;
+  if (typeof att.size === 'number' && att.size > MAX_URL_ATTACHMENT_BYTES) return null;
+  return parsed.toString();
+}
+
 export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter {
   const { adapter } = config;
   // The instance name becomes a webhook route segment (the route regex is
@@ -503,6 +528,7 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
           width: (att as unknown as Record<string, unknown>).width,
           height: (att as unknown as Record<string, unknown>).height,
         };
+        const url = att.fetchData ? null : attachmentFetchUrl(att);
         if (att.fetchData) {
           try {
             const buffer = await att.fetchData();
@@ -510,6 +536,18 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
           } catch (err) {
             log.warn('Failed to download attachment', { type: att.type, err });
           }
+        } else if (url) {
+          try {
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const buffer = Buffer.from(await res.arrayBuffer());
+            if (buffer.length > MAX_URL_ATTACHMENT_BYTES) throw new Error(`too large: ${buffer.length} bytes`);
+            entry.data = buffer.toString('base64');
+          } catch (err) {
+            log.warn('Failed to download attachment', { type: att.type, err });
+          }
+        } else {
+          log.warn('Attachment has no download path; passing metadata only', { type: att.type, name: att.name });
         }
         enriched.push(entry);
       }
