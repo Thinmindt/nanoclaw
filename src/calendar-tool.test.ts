@@ -101,7 +101,9 @@ describe('planCalendarEvent', () => {
 
   it('caps text lengths', () => {
     expect(plan({ title: 'x'.repeat(201), start: '2026-10-20T09:00' }).ok).toBe(false);
-    expect(plan({ title: 'x', start: '2026-10-20T09:00', description: 'd'.repeat(MAX_DESCRIPTION + 1) }).ok).toBe(false);
+    expect(plan({ title: 'x', start: '2026-10-20T09:00', description: 'd'.repeat(MAX_DESCRIPTION + 1) }).ok).toBe(
+      false,
+    );
   });
 
   it('caps reminders', () => {

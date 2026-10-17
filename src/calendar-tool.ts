@@ -196,7 +196,8 @@ export function planCalendarEvent(input: Record<string, unknown>, now: Date, tim
     };
     if (location) body.location = location;
     if (description) body.description = description;
-    if (reminders) body.reminders = { useDefault: false, overrides: reminders.map((minutes) => ({ method: 'popup', minutes })) };
+    if (reminders)
+      body.reminders = { useDefault: false, overrides: reminders.map((minutes) => ({ method: 'popup', minutes })) };
     return { ok: true, body };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
