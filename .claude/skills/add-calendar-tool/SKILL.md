@@ -122,7 +122,13 @@ example in its memory or instructions:
 
 > Create calendar events with `ncl calendar create-event --title … --start 2026-10-20T15:00 [--end …]
 > [--all-day] [--location …] [--description …] [--reminders 60,1440]`. It writes to one calendar and can't
-> add guests or send invitations.
+> add guests or send invitations. It is the only way to add events: never ask the operator to loosen the
+> gateway's Calendar rules. If the tool fails, report the error, and offer a Google Calendar add link
+> (`https://calendar.google.com/calendar/render?action=TEMPLATE&text=…&dates=…&location=…&details=…`) the
+> operator can open and save themselves.
+
+Until the tool is installed, give the agent only the last instruction: offer the add link, and never ask
+for Calendar write rules to be loosened.
 
 ## Troubleshooting
 
