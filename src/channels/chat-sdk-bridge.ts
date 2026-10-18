@@ -510,6 +510,11 @@ export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter
           } catch (err) {
             log.warn('Failed to download attachment', { type: att.type, err });
           }
+        } else {
+          // URL-only attachments (Discord): patch-discord-attachments skill.
+          const { downloadAttachmentByUrl } = await import('./attachment-url-download.js');
+          const data = await downloadAttachmentByUrl(att);
+          if (data) entry.data = data;
         }
         enriched.push(entry);
       }
