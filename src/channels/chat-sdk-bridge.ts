@@ -393,7 +393,8 @@ function resolveSelectedOption(
   eventValue: string | undefined,
   tail: string | undefined,
 ): string {
-  const candidate = eventValue ?? tail ?? '';
+  // Discord joins custom_id and value as "<index>\n<index>": patch-discord-approval-buttons skill.
+  const candidate = (eventValue ?? tail ?? '').split('\n')[0];
   if (render && /^\d+$/.test(candidate)) {
     const idx = Number(candidate);
     if (render.options[idx]) return render.options[idx].value;
