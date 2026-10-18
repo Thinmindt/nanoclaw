@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "architect",
+  "version": "1.0.0",
+  "description": "Architecture planning, review, and scope verdicts for one person's coding projects through a small book-guided expert panel and a Tech lead whose current-source research is done by a separate Scout agent; reads private repositories, has no web access, and runs each job across several turns. Derived from code-architect by zvi-fried.",
+  "author": { "name": "Thinmindt", "url": "https://github.com/Thinmindt" },
+  "license": "MIT",
+  "keywords": ["architecture", "expert-panel", "review"],
+  "extensions": {
+    "ai.nanoco.nanoclaw": {
+      "agentName": "Architect"
+    }
+  }
+}
