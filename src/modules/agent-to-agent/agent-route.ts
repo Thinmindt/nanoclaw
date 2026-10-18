@@ -287,6 +287,10 @@ async function performAgentRoute(
   session: Session,
   targetAgentGroupId: string,
 ): Promise<void> {
+  // add-scout-gate skill: an answer from a gated agent arrives as bounded plain text.
+  const { sanitizeA2aContent } = await import('../a2a-gate/index.js');
+  msg = { ...msg, content: await sanitizeA2aContent(session.agent_group_id, msg.content) };
+
   const targetSession = await resolveTargetSession(msg, session, targetAgentGroupId);
   const a2aMsgId = `a2a-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 

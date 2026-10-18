@@ -79,6 +79,10 @@ export const a2aSend = defineGuardedAction({
       return DENY(`target agent group ${to} not found for message ${String(input.payload.id)}`);
     }
     if (isSelf) return ALLOW('self-send');
+    // add-scout-gate skill: a content check that can refuse, never allow.
+    const { vetoA2aContent } = await import('../a2a-gate/index.js');
+    const veto = await vetoA2aContent(input);
+    if (veto) return DENY(veto);
     const policy = await getMessagePolicy(from, to);
     if (policy) {
       return HOLD(`a2a message policy ${from}→${to} holds for ${policy.approver}`, policy.approver);
