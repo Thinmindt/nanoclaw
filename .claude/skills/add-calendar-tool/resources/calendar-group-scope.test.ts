@@ -31,9 +31,13 @@ vi.mock('../../container-restart.js', () => ({
 
 // Hermetic: never read the install's real .env, which may configure a live calendar.
 vi.mock('../../env.js', () => ({ readEnvFile: () => ({}) }));
+vi.mock('../../config.js', async () => {
+  const actual = await vi.importActual('../../config.js');
+  return { ...actual, TIMEZONE: 'America/Los_Angeles' };
+});
 
 import { closeDb, createAgentGroup, initTestDb, runMigrations } from '../../db/index.js';
-import { ensureContainerConfig, getContainerConfig } from '../../db/container-configs.js';
+import { ensureContainerConfig, getContainerConfig, updateContainerConfigScalars } from '../../db/container-configs.js';
 import '../commands/index.js';
 import { dispatch } from '../dispatch.js';
 import type { CallerContext } from '../frame.js';
@@ -46,7 +50,6 @@ const ENV_KEYS = [
   'CALENDAR_TOOL_GATEWAY_AGENT',
   'CALENDAR_TOOL_AGENT_GROUPS',
   'ONECLI_BIN',
-  'TZ',
 ] as const;
 const saved: Record<string, string | undefined> = {};
 let dir: string;
@@ -63,7 +66,6 @@ beforeEach(async () => {
   process.env.CALENDAR_TOOL_GATEWAY_AGENT = 'calendar-event-tool';
   process.env.CALENDAR_TOOL_AGENT_GROUPS = OWN;
   process.env.ONECLI_BIN = bin;
-  process.env.TZ = 'America/Los_Angeles';
 
   await runMigrations(await initTestDb());
   await createAgentGroup({
@@ -102,5 +104,40 @@ describe('calendar-create-event under cli_scope=group', () => {
     expect(body.summary).toBe('Vet');
     expect(body).not.toHaveProperty('agent_group_id');
     expect(body).not.toHaveProperty('group');
+  });
+
+  it('accepts --all-day as the CLI sends it', async () => {
+    const day = inAWeek().slice(0, 10);
+    const res = await dispatch(
+      { id: 'req-2', command: 'calendar-create-event', args: { title: 'Trip', start: day, 'all-day': true } },
+      agent,
+    );
+
+    expect(res).toMatchObject({ ok: true });
+    const body = JSON.parse(fs.readFileSync(path.join(dir, 'stdin'), 'utf-8'));
+    expect(body.start).toEqual({ date: day });
+  });
+
+  it('reads local times in the install time zone', async () => {
+    const res = await dispatch(
+      { id: 'req-3', command: 'calendar-create-event', args: { title: 'x', start: inAWeek() } },
+      agent,
+    );
+
+    expect(res).toMatchObject({ ok: true });
+    const body = JSON.parse(fs.readFileSync(path.join(dir, 'stdin'), 'utf-8'));
+    expect(body.start).toMatchObject({ timeZone: 'America/Los_Angeles' });
+  });
+
+  it("prefers the agent group's own time zone", async () => {
+    await updateContainerConfigScalars(OWN, { timezone: 'America/New_York' });
+    const res = await dispatch(
+      { id: 'req-4', command: 'calendar-create-event', args: { title: 'x', start: inAWeek() } },
+      agent,
+    );
+
+    expect(res).toMatchObject({ ok: true });
+    const body = JSON.parse(fs.readFileSync(path.join(dir, 'stdin'), 'utf-8'));
+    expect(body.start).toMatchObject({ timeZone: 'America/New_York' });
   });
 });

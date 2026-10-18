@@ -19,6 +19,8 @@ import { lookup } from '../registry.js';
 
 // Hermetic: never read the install's real .env, which may configure a live calendar.
 vi.mock('../../env.js', () => ({ readEnvFile: () => ({}) }));
+// No DB here; calendar-group-scope.test.ts covers time zone resolution end to end.
+vi.mock('../../container-config.js', () => ({ resolveGroupTimezone: async () => 'America/Los_Angeles' }));
 
 const ENV_KEYS = [
   'CALENDAR_TOOL_CALENDAR_ID',
@@ -26,7 +28,6 @@ const ENV_KEYS = [
   'CALENDAR_TOOL_GATEWAY_AGENT',
   'CALENDAR_TOOL_AGENT_GROUPS',
   'ONECLI_BIN',
-  'TZ',
 ] as const;
 const saved: Record<string, string | undefined> = {};
 
@@ -62,7 +63,6 @@ function configure(): void {
   process.env.CALENDAR_TOOL_GATEWAY_AGENT = 'calendar-event-tool';
   process.env.CALENDAR_TOOL_AGENT_GROUPS = 'ag-allowed';
   process.env.ONECLI_BIN = fakeOnecli;
-  process.env.TZ = 'America/Los_Angeles';
 }
 
 const agent = (agentGroupId: string) =>

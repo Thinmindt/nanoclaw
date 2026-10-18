@@ -32,12 +32,15 @@ export const MAX_DAYS_AHEAD = 366;
 /** Marker on every event this tool creates, so later edit/delete can be limited to its own events. */
 export const CREATED_BY = 'nanoclaw-calendar-tool';
 
-const ALLOWED_FIELDS = new Set(['title', 'start', 'end', 'all-day', 'location', 'description', 'reminders']);
+/** Canonical keys, as CLI dispatch spells them (`--all-day` arrives as `all_day`). */
+const ALLOWED_FIELDS = new Set(['title', 'start', 'end', 'all_day', 'location', 'description', 'reminders']);
 /**
  * Keys the CLI framework may add that carry no event data. Dispatch auto-fills `agent_group_id` and
  * `group` for group-scoped agents; the caller's group is taken from the authenticated context instead.
  */
 const IGNORED_FIELDS = new Set(['help', 'agent_group_id', 'group']);
+
+const flag = (key: string): string => `--${key.replace(/_/g, '-')}`;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -135,21 +138,25 @@ function dateValue(raw: string, field: string): Date {
  * Decide whether an event may be created and build its exact request body.
  * Pure: the clock and time zone come in as arguments.
  */
-export function planCalendarEvent(input: Record<string, unknown>, now: Date, timeZone: string): EventPlan {
+export function planCalendarEvent(raw: Record<string, unknown>, now: Date, timeZone: string): EventPlan {
   try {
+    // Same canonicalization as CLI dispatch, so direct callers and `ncl` agree.
+    // A null-prototype object keeps a "__proto__" key an ordinary (refused) field.
+    const input: Record<string, unknown> = Object.create(null);
+    for (const [key, value] of Object.entries(raw)) input[key.replace(/-/g, '_')] = value;
     for (const key of Object.keys(input)) {
       if (IGNORED_FIELDS.has(key) || ALLOWED_FIELDS.has(key)) continue;
       if (/attendee|guest|invite/i.test(key)) {
         throw new Error('this tool cannot add guests or send invitations; create the event without them');
       }
-      throw new Error(`unknown field --${key}; allowed: ${[...ALLOWED_FIELDS].map((f) => `--${f}`).join(', ')}`);
+      throw new Error(`unknown field ${flag(key)}; allowed: ${[...ALLOWED_FIELDS].map(flag).join(', ')}`);
     }
 
     const summary = text(input.title, 'title', MAX_TITLE, true)!;
     const location = text(input.location, 'location', MAX_LOCATION, false);
     const description = text(input.description, 'description', MAX_DESCRIPTION, false);
     const reminders = parseReminders(input.reminders);
-    const allDay = input['all-day'] === true || input['all-day'] === 'true';
+    const allDay = input.all_day === true || input.all_day === 'true';
     const startRaw = text(input.start, 'start', 40, true)!;
     const endRaw = text(input.end, 'end', 40, false);
 
@@ -216,7 +223,6 @@ export type CalendarToolConfig = {
   gatewayAgent: string;
   /** Agent groups allowed to call the tool. */
   agentGroups: Set<string>;
-  timeZone: string;
   onecliBin: string;
 };
 
@@ -235,7 +241,6 @@ export function readCalendarToolConfig(env: Record<string, string | undefined>):
     connectionId,
     gatewayAgent,
     agentGroups: new Set(groups),
-    timeZone: env.TZ?.trim() || 'UTC',
     onecliBin: env.ONECLI_BIN?.trim() || path.join(os.homedir(), '.local', 'bin', 'onecli'),
   };
 }
@@ -247,7 +252,6 @@ export function loadCalendarToolConfig(): CalendarToolConfig | null {
     'CALENDAR_TOOL_GATEWAY_AGENT',
     'CALENDAR_TOOL_AGENT_GROUPS',
     'ONECLI_BIN',
-    'TZ',
   ];
   const file = readEnvFile(keys);
   const merged: Record<string, string | undefined> = {};

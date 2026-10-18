@@ -28,6 +28,8 @@ This skill adds a host-side command, `ncl calendar create-event`, as the only wa
   creations an hour, enforced outside the agent.
 - **Works under `cli_scope=group`:** the command names no CLI resource, so the group-scope whitelist doesn't
   hide it. Access is gated by `CALENDAR_TOOL_AGENT_GROUPS` instead.
+- **Local times use NanoClaw's time zone:** the agent group's override if it has one, else the install's
+  (`TZ`, then the system zone), the same rule scheduled tasks follow.
 
 **Keep the calendar private.** Titles, descriptions and locations are written by the agent, and may be
 shaped by content it read (an email, a web page). If the calendar is shared with anyone, or published
@@ -166,6 +168,7 @@ for Calendar write rules to be loosened.
   and check that `CALENDAR_TOOL_CONNECTION_ID` is a `google-calendar` connection.
 - **HTTP 403 `blocked_by_policy`:** the calendar id in `.env` and in the published rule differ. Re-run step 4.
 - **HTTP 404:** the calendar id is wrong, or the connected Google account can't write to that calendar.
+- **Event at the wrong time:** check the group's time zone (`ncl groups config get`) and `TZ` in `.env`.
 - **HTTP 429 or a rate-limit block:** more than `CALENDAR_TOOL_RATE_LIMIT_PER_HOUR` events in the last hour.
 - **"unpublished changes to other rules" from step 4:** see step 4; publish or discard the dashboard edits.
 - **`calendar-tool-skill-sync.test.ts` fails:** a file in `src/` and its copy in `resources/` differ. Make
