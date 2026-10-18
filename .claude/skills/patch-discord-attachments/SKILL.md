@@ -18,6 +18,13 @@ before it is requested. Any other attachment still reaches the agent as metadata
 The download runs on the host, outside the agent sandbox and its credential gateway, so this host check is
 the boundary.
 
+## When this patch is no longer needed
+
+`@chat-adapter/discord` 4.33.0 and later give each attachment its own `fetchData()`, so the bridge's
+existing path downloads it and the block added here never runs. Once `package.json` pins
+`@chat-adapter/discord` at 4.33.0 or later, follow `REMOVE.md`. Note that the adapter's own download allows
+any public https host, while this helper allows only Discord's CDN hosts.
+
 ## Steps
 
 Run every step from the NanoClaw project root. Each step is safe to re-run.
