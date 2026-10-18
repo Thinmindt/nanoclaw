@@ -72,6 +72,16 @@ describe('planCalendarEvent', () => {
     }
   });
 
+  it('accepts the flag spelling CLI dispatch produces (all_day)', () => {
+    const p = plan({ title: 'Trip', start: '2026-11-01', end: '2026-11-03', all_day: true });
+    expect(p.ok && p.body.end).toEqual({ date: '2026-11-04' });
+  });
+
+  it('refuses a __proto__ key instead of letting it shape the input', () => {
+    const p = plan(JSON.parse('{"title":"x","start":"2026-10-20T09:00","__proto__":{"attendees":"a@b.c"}}'));
+    expect(p).toEqual({ ok: false, error: expect.stringMatching(/unknown field/) });
+  });
+
   it('turns reminders into popup overrides', () => {
     const p = plan({ title: 'x', start: '2026-10-20T09:00', reminders: '60, 1440' });
     expect(p.ok && p.body.reminders).toEqual({
@@ -145,17 +155,15 @@ describe('readCalendarToolConfig', () => {
     CALENDAR_TOOL_CONNECTION_ID: 'conn-1',
     CALENDAR_TOOL_GATEWAY_AGENT: 'calendar-event-tool',
     CALENDAR_TOOL_AGENT_GROUPS: 'ag-1, ag-2',
-    TZ: TZ,
   };
 
   it('reads a complete configuration', () => {
     const c = readCalendarToolConfig(full);
     expect(c?.agentGroups).toEqual(new Set(['ag-1', 'ag-2']));
-    expect(c?.timeZone).toBe(TZ);
   });
 
   it('is unconfigured when any required key is missing', () => {
-    for (const key of Object.keys(full).filter((k) => k !== 'TZ')) {
+    for (const key of Object.keys(full)) {
       expect(readCalendarToolConfig({ ...full, [key]: '' })).toBeNull();
     }
   });
@@ -166,7 +174,6 @@ const CONFIG: CalendarToolConfig = {
   connectionId: 'conn-1',
   gatewayAgent: 'calendar-event-tool',
   agentGroups: new Set(['ag-1']),
-  timeZone: TZ,
   onecliBin: '/usr/local/bin/onecli',
 };
 
