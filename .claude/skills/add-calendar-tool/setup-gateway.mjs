@@ -6,10 +6,18 @@
 //   2. makes it selective with no stored secrets (it never needs the model key),
 //   3. assigns it exactly one app connection: CALENDAR_TOOL_CONNECTION_ID,
 //   4. publishes two policy rules for it: allow POST to the configured calendar's
-//      events (path with the id raw and URL-encoded), then block everything else.
+//      events (path with the id raw and URL-encoded), rate-limited to
+//      CALENDAR_TOOL_RATE_LIMIT_PER_HOUR (default 20), then block everything else.
 //
-// Usage, from the NanoClaw project root:  node .claude/skills/add-calendar-tool/setup-gateway.mjs
-// Undo:                                   node .claude/skills/add-calendar-tool/setup-gateway.mjs --remove
+// Publishing makes the gateway's whole draft live, so the script refuses to run while the draft holds
+// edits to rules it doesn't own (someone's unpublished dashboard work). Publish or discard those first,
+// or pass --force to publish them along with this change.
+//
+// Written against OneCLI 1.42's REST API (agents, secrets, connections, policy). OneCLI 1.43+ removes the
+// agent secret-assignment API, so re-check this script before upgrading OneCLI past the pin.
+//
+// Usage, from the NanoClaw project root:  node .claude/skills/add-calendar-tool/setup-gateway.mjs [--force]
+// Undo:                                   node .claude/skills/add-calendar-tool/setup-gateway.mjs --remove [--force]
 import fs from 'node:fs';
 
 const env = Object.fromEntries(
@@ -48,6 +56,38 @@ const listAgents = async () => {
 
 const ALLOW = 'Calendar tool: allow creating events on the configured calendar';
 const DENY = 'Calendar tool: default-deny everything else';
+const OWN = new Set([ALLOW, DENY]);
+const rateLimit = Number(env.CALENDAR_TOOL_RATE_LIMIT_PER_HOUR || 20);
+if (!Number.isInteger(rateLimit) || rateLimit < 1) {
+  console.error('CALENDAR_TOOL_RATE_LIMIT_PER_HOUR must be a whole number of at least 1');
+  process.exit(1);
+}
+
+// Everything that defines a rule's effect, in rule order, for rules this script doesn't own.
+async function foreignRules(status) {
+  const rules = (await call('GET', `/v1/policy/rules?status=${status}`)).sort((a, b) => a.priority - b.priority);
+  return JSON.stringify(
+    rules
+      .filter((r) => !OWN.has(r.name))
+      .map((r) => [
+        r.name,
+        r.action,
+        r.enabled,
+        r.requireApproval,
+        r.rateLimit,
+        r.rateLimitWindow,
+        r.identities,
+        r.targets,
+      ]),
+  );
+}
+if (!process.argv.includes('--force') && (await foreignRules('draft')) !== (await foreignRules('published'))) {
+  console.error(
+    'The gateway policy has unpublished changes to other rules. Publishing would make them live too.\n' +
+      'Publish or discard them in the OneCLI dashboard first, or re-run with --force to publish them as well.',
+  );
+  process.exit(1);
+}
 
 let agent = (await listAgents()).find((a) => a.identifier === identifier);
 
@@ -89,6 +129,8 @@ await call('POST', '/v1/policy/rules', {
   action: 'allow',
   enabled: true,
   requireApproval: false,
+  rateLimit,
+  rateLimitWindow: 'hour',
   identities: identity,
   targets: paths.map((p) => ({ kind: 'network', hostPattern: 'www.googleapis.com', pathPattern: p, method: 'POST' })),
 });
@@ -107,4 +149,6 @@ const mine = [ALLOW, DENY].map((n) => ordered.find((r) => r.name === n));
 const rest = ordered.filter((r) => !mine.includes(r));
 await call('PUT', '/v1/policy/rules/order', { orderedIds: [...rest, ...mine].map((r) => r.id) });
 await call('POST', '/v1/policy/publish', {});
-console.log(`published rules for ${identifier}: POST ${paths.join(' | ')}; everything else blocked`);
+console.log(
+  `published rules for ${identifier}: POST ${paths.join(' | ')} (max ${rateLimit}/hour); everything else blocked`,
+);

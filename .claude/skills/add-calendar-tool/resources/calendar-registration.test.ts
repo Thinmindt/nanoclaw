@@ -78,7 +78,8 @@ describe('calendar-create-event registration', () => {
     const cmd = lookup('calendar-create-event');
     expect(cmd).toBeDefined();
     expect(cmd?.access).toBe('open');
-    expect(cmd?.resource).toBe('calendar');
+    // No resource: keeps the command reachable under cli_scope=group (see calendar-group-scope.test.ts).
+    expect(cmd?.resource).toBeUndefined();
   });
 
   it('creates an event through the gateway as the tool identity, with no guests', async () => {

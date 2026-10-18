@@ -22,9 +22,21 @@ This skill adds a host-side command, `ncl calendar create-event`, as the only wa
   that calendar's events. The agents' own gateway identities keep Calendar writes blocked, so the tool can't
   be bypassed.
 - **Bounds:** events last at most 14 days, can't start in the past, and start at most a year ahead. Text
-  lengths are capped, with at most 5 reminders. Events are tagged `createdBy: nanoclaw-calendar-tool`.
+  lengths are capped, with at most 5 reminders. For all-day events, `--end` is the last day, inclusive.
+  Events are tagged `createdBy: nanoclaw-calendar-tool`.
+- **Rate limit:** the gateway allows at most `CALENDAR_TOOL_RATE_LIMIT_PER_HOUR` (default 20) event
+  creations an hour, enforced outside the agent.
+- **Works under `cli_scope=group`:** the command names no CLI resource, so the group-scope whitelist doesn't
+  hide it. Access is gated by `CALENDAR_TOOL_AGENT_GROUPS` instead.
 
-Requires the OneCLI gateway (`/add-onecli`) and a Google Calendar connection in it.
+**Keep the calendar private.** Titles, descriptions and locations are written by the agent, and may be
+shaped by content it read (an email, a web page). If the calendar is shared with anyone, or published
+through a public or secret iCal link, the tool becomes a way to show that text to them. Use a dedicated
+calendar that is shared with no one.
+
+Requires the OneCLI gateway (`/add-onecli`) and a Google Calendar connection in it. The gateway setup in
+step 4 uses OneCLI 1.42's REST API. OneCLI 1.43+ removes the agent secret-assignment API it relies on, so
+re-check step 4 before upgrading OneCLI past that pin.
 
 ## Steps
 
@@ -33,20 +45,28 @@ Run every step from the NanoClaw project root. Each step is safe to re-run.
 ### 1. Copy the tool, its command and tests
 
 ```
-.claude/skills/add-calendar-tool/resources/calendar-tool.ts                → src/calendar-tool.ts
-.claude/skills/add-calendar-tool/resources/calendar-tool.test.ts           → src/calendar-tool.test.ts
-.claude/skills/add-calendar-tool/resources/calendar.ts                     → src/cli/resources/calendar.ts
-.claude/skills/add-calendar-tool/resources/calendar-registration.test.ts   → src/cli/resources/calendar-registration.test.ts
+.claude/skills/add-calendar-tool/resources/calendar-tool.ts                  → src/calendar-tool.ts
+.claude/skills/add-calendar-tool/resources/calendar-tool.test.ts             → src/calendar-tool.test.ts
+.claude/skills/add-calendar-tool/resources/calendar-tool-skill-sync.test.ts  → src/calendar-tool-skill-sync.test.ts
+.claude/skills/add-calendar-tool/resources/calendar.ts                       → src/cli/resources/calendar.ts
+.claude/skills/add-calendar-tool/resources/calendar-registration.test.ts     → src/cli/resources/calendar-registration.test.ts
+.claude/skills/add-calendar-tool/resources/calendar-group-scope.test.ts      → src/cli/resources/calendar-group-scope.test.ts
 ```
 
 ```bash
-cp .claude/skills/add-calendar-tool/resources/calendar-tool.ts .claude/skills/add-calendar-tool/resources/calendar-tool.test.ts src/
-cp .claude/skills/add-calendar-tool/resources/calendar.ts .claude/skills/add-calendar-tool/resources/calendar-registration.test.ts src/cli/resources/
+R=.claude/skills/add-calendar-tool/resources
+cp $R/calendar-tool.ts $R/calendar-tool.test.ts $R/calendar-tool-skill-sync.test.ts src/
+cp $R/calendar.ts $R/calendar-registration.test.ts $R/calendar-group-scope.test.ts src/cli/resources/
 ```
 
 - `calendar-registration.test.ts` guards the integration point in step 2. It imports the real command
   barrel and drives `calendar-create-event` through the registry as dispatch does, with a stand-in
   `onecli` binary as the only fake. Remove the barrel line and it goes red.
+- `calendar-group-scope.test.ts` drives the command through the real dispatch and guard as a
+  `cli_scope=group` agent against a test database, so a change that hides or breaks it for group-scoped
+  agents goes red.
+- `calendar-tool-skill-sync.test.ts` fails if a file in `src/` and its copy in `resources/` differ, so an
+  edit made on one side only can't be lost on the next rebuild.
 - `calendar-tool.test.ts` unit-tests the tool's own rules: refusing guests, bounds, and the exact gateway call.
 
 ### 2. Register the command
@@ -79,6 +99,8 @@ CALENDAR_TOOL_CALENDAR_ID=<calendar id>@group.calendar.google.com
 CALENDAR_TOOL_CONNECTION_ID=<google-calendar connection id>
 CALENDAR_TOOL_GATEWAY_AGENT=calendar-event-tool
 CALENDAR_TOOL_AGENT_GROUPS=<agent group id>[,<another>]
+# optional, default 20
+CALENDAR_TOOL_RATE_LIMIT_PER_HOUR=20
 ```
 
 ### 4. Configure the gateway
@@ -89,14 +111,19 @@ node .claude/skills/add-calendar-tool/setup-gateway.mjs
 
 This creates the `calendar-event-tool` gateway agent if needed, makes it selective with no stored secrets,
 assigns it only `CALENDAR_TOOL_CONNECTION_ID`, and publishes its two rules: allow POST to the calendar's
-events, block everything else. It never changes other agents' rules. Re-run it after changing the
-calendar or connection in `.env`.
+events (rate-limited), block everything else. It never changes other agents' rules. Re-run it after changing
+the calendar, connection or rate limit in `.env`.
+
+Publishing makes the gateway's whole policy draft live, so the script stops if the draft holds unpublished
+edits to other rules (for example half-finished work in the OneCLI dashboard). Publish or discard those
+first, or re-run with `--force` to publish them as well.
 
 ### 5. Build and test
 
 ```bash
 pnpm run build
-pnpm exec vitest run src/calendar-tool.test.ts src/cli/resources/calendar-registration.test.ts
+pnpm exec vitest run src/calendar-tool.test.ts src/calendar-tool-skill-sync.test.ts \
+  src/cli/resources/calendar-registration.test.ts src/cli/resources/calendar-group-scope.test.ts
 ```
 
 ### 6. Mark the install reviewed and restart
@@ -121,7 +148,8 @@ The event appears on the chosen calendar; delete it afterwards. Then tell the ag
 example in its memory or instructions:
 
 > Create calendar events with `ncl calendar create-event --title … --start 2026-10-20T15:00 [--end …]
-> [--all-day] [--location …] [--description …] [--reminders 60,1440]`. It writes to one calendar and can't
+> [--all-day] [--location …] [--description …] [--reminders 60,1440]`. For an all-day event, `--start` and
+> `--end` are dates and `--end` is the last day, inclusive. It writes to one calendar and can't
 > add guests or send invitations. It is the only way to add events: never ask the operator to loosen the
 > gateway's Calendar rules. If the tool fails, report the error, and offer a Google Calendar add link
 > (`https://calendar.google.com/calendar/render?action=TEMPLATE&text=…&dates=…&location=…&details=…`) the
@@ -138,3 +166,7 @@ for Calendar write rules to be loosened.
   and check that `CALENDAR_TOOL_CONNECTION_ID` is a `google-calendar` connection.
 - **HTTP 403 `blocked_by_policy`:** the calendar id in `.env` and in the published rule differ. Re-run step 4.
 - **HTTP 404:** the calendar id is wrong, or the connected Google account can't write to that calendar.
+- **HTTP 429 or a rate-limit block:** more than `CALENDAR_TOOL_RATE_LIMIT_PER_HOUR` events in the last hour.
+- **"unpublished changes to other rules" from step 4:** see step 4; publish or discard the dashboard edits.
+- **`calendar-tool-skill-sync.test.ts` fails:** a file in `src/` and its copy in `resources/` differ. Make
+  the same edit on both sides; `resources/` is the canonical copy.

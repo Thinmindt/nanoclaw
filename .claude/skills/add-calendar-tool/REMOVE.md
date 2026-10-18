@@ -11,6 +11,8 @@ Run this while the `CALENDAR_TOOL_*` keys are still in `.env`:
 node .claude/skills/add-calendar-tool/setup-gateway.mjs --remove
 ```
 
+If it stops because of unpublished dashboard edits to other rules, publish or discard those, or add `--force`.
+
 ## 2. Unregister the command
 
 Delete this line from `src/cli/resources/index.ts`:
@@ -22,8 +24,9 @@ import './calendar.js';
 ## 3. Remove the copied files
 
 ```bash
-rm -f src/calendar-tool.ts src/calendar-tool.test.ts \
-      src/cli/resources/calendar.ts src/cli/resources/calendar-registration.test.ts
+rm -f src/calendar-tool.ts src/calendar-tool.test.ts src/calendar-tool-skill-sync.test.ts \
+      src/cli/resources/calendar.ts src/cli/resources/calendar-registration.test.ts \
+      src/cli/resources/calendar-group-scope.test.ts
 ```
 
 ## 4. Remove the settings
@@ -35,6 +38,7 @@ CALENDAR_TOOL_CALENDAR_ID=…
 CALENDAR_TOOL_CONNECTION_ID=…
 CALENDAR_TOOL_GATEWAY_AGENT=…
 CALENDAR_TOOL_AGENT_GROUPS=…
+CALENDAR_TOOL_RATE_LIMIT_PER_HOUR=…
 ```
 
 ## 5. Build, stamp and restart

@@ -4,12 +4,15 @@ import { register } from '../registry.js';
 register({
   name: 'calendar-create-event',
   action: 'calendar.create-event',
-  resource: 'calendar',
+  // No `resource`: a command without one stays reachable for agents with cli_scope=group (the guard's
+  // resource whitelist applies only to commands that name a resource). Access is gated by the agent
+  // groups listed in CALENDAR_TOOL_AGENT_GROUPS instead.
   access: 'open',
   description:
     'Create an event on the operator-designated calendar. No guests or invitations are possible. ' +
-    'Use --title, --start (2026-10-20T15:00 local, or with an offset; a date with --all-day), optional --end, ' +
-    '--location, --description, --reminders (comma-separated minutes before, e.g. 60,1440).',
+    'Use --title, --start (2026-10-20T15:00 local, or with an offset; a date with --all-day), optional --end ' +
+    '(for --all-day, the last day, inclusive), --location, --description, ' +
+    '--reminders (comma-separated minutes before, e.g. 60,1440).',
   parseArgs: (raw) => raw,
   handler: async (args, ctx) => {
     const config = loadCalendarToolConfig();
