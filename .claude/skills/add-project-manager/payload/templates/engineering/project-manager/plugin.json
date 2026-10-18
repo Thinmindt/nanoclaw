@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "project-manager",
+  "version": "1.0.0",
+  "description": "Project manager for a small portfolio of personal coding projects: keeps a private workbench of state and design docs, turns Architect findings into agreed work items, runs a fixed-length iteration with one item in progress at a time, and can exchange a fixed form with the owner's Steward (life) agent each iteration.",
+  "author": { "name": "Thinmindt", "url": "https://github.com/Thinmindt" },
+  "license": "MIT",
+  "keywords": ["project-management", "portfolio", "scrum"],
+  "extensions": {
+    "ai.nanoco.nanoclaw": {
+      "agentName": "Project Manager"
+    }
+  }
+}
