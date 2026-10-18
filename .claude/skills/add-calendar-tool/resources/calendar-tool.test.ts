@@ -25,7 +25,7 @@ function plan(input: Record<string, unknown>) {
 
 describe('planCalendarEvent', () => {
   it('builds a timed event from local wall-clock times', () => {
-    const p = plan({ title: 'Vet: Seneca', start: '2026-10-20T15:00', end: '2026-10-20T15:30', location: 'Clinic' });
+    const p = plan({ title: 'Vet appointment', start: '2026-10-20T15:00', end: '2026-10-20T15:30', location: 'Clinic' });
     expect(p.ok).toBe(true);
     if (!p.ok) return;
     expect(p.body.start).toEqual({ dateTime: '2026-10-20T15:00:00', timeZone: TZ });
