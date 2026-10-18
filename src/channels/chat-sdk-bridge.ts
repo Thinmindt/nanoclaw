@@ -1131,7 +1131,8 @@ async function handleForwardedEvent(
         const colonIdx = customId.indexOf(':', 4); // after "ncq:"
         if (colonIdx !== -1) {
           questionId = customId.slice(4, colonIdx);
-          tail = customId.slice(colonIdx + 1);
+          // patch-discord-approval-buttons skill: the Discord adapter encodes custom_id as `<id>\n<value>`.
+          tail = customId.slice(colonIdx + 1).split('\n')[0];
         }
       }
 
