@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "scout",
+  "version": "1.0.0",
+  "description": "Research-only agent that reads the open web for an Architect agent that cannot: answers questions named by technology and version, never by address, with dated sources it found itself, and holds no code, no mounts, and no credentials.",
+  "author": { "name": "Thinmindt", "url": "https://github.com/Thinmindt" },
+  "license": "MIT",
+  "keywords": ["research", "web", "architecture"],
+  "extensions": {
+    "ai.nanoco.nanoclaw": {
+      "agentName": "Scout"
+    }
+  }
+}
