@@ -33,8 +33,11 @@ export const MAX_DAYS_AHEAD = 366;
 export const CREATED_BY = 'nanoclaw-calendar-tool';
 
 const ALLOWED_FIELDS = new Set(['title', 'start', 'end', 'all-day', 'location', 'description', 'reminders']);
-/** Keys the CLI framework may add that carry no event data. */
-const IGNORED_FIELDS = new Set(['help']);
+/**
+ * Keys the CLI framework may add that carry no event data. Dispatch auto-fills `agent_group_id` and
+ * `group` for group-scoped agents; the caller's group is taken from the authenticated context instead.
+ */
+const IGNORED_FIELDS = new Set(['help', 'agent_group_id', 'group']);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -156,11 +159,11 @@ export function planCalendarEvent(input: Record<string, unknown>, now: Date, tim
     let endInstant: Date;
     if (allDay) {
       startInstant = dateValue(startRaw, 'start');
-      endInstant = endRaw ? dateValue(endRaw, 'end') : new Date(startInstant.getTime() + DAY_MS);
-      // Google's all-day end date is exclusive; accept an inclusive end equal to start.
-      if (endRaw && endInstant.getTime() === startInstant.getTime()) {
-        endInstant = new Date(startInstant.getTime() + DAY_MS);
-      }
+      // --end names the last day of the event (inclusive), the way people say it. Google's all-day end
+      // date is exclusive, so the body carries the day after.
+      const lastDay = endRaw ? dateValue(endRaw, 'end') : startInstant;
+      if (lastDay.getTime() < startInstant.getTime()) throw new Error('--end must not be before --start');
+      endInstant = new Date(lastDay.getTime() + DAY_MS);
       start = { date: startInstant.toISOString().slice(0, 10) };
       end = { date: endInstant.toISOString().slice(0, 10) };
     } else {

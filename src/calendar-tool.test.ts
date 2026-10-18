@@ -39,11 +39,37 @@ describe('planCalendarEvent', () => {
     expect(p.ok && p.body.end).toEqual({ dateTime: '2026-10-20T23:00:00.000Z', timeZone: TZ });
   });
 
-  it('builds an all-day event with an exclusive end date', () => {
+  it('regression: an all-day --end is the last day, inclusive (Google gets the day after)', () => {
     const p = plan({ title: 'Trip', start: '2026-11-01', end: '2026-11-03', 'all-day': true });
-    expect(p.ok && p.body).toMatchObject({ start: { date: '2026-11-01' }, end: { date: '2026-11-03' } });
+    expect(p.ok && p.body).toMatchObject({ start: { date: '2026-11-01' }, end: { date: '2026-11-04' } });
     const single = plan({ title: 'Holiday', start: '2026-11-26', 'all-day': 'true' });
     expect(single.ok && single.body).toMatchObject({ start: { date: '2026-11-26' }, end: { date: '2026-11-27' } });
+    const sameDay = plan({ title: 'Holiday', start: '2026-11-26', end: '2026-11-26', 'all-day': true });
+    expect(sameDay.ok && sameDay.body).toMatchObject({ end: { date: '2026-11-27' } });
+  });
+
+  it('carries an all-day event across a month and year end', () => {
+    const p = plan({ title: 'Break', start: '2026-12-30', end: '2027-01-01', 'all-day': true });
+    expect(p.ok && p.body).toMatchObject({ start: { date: '2026-12-30' }, end: { date: '2027-01-02' } });
+  });
+
+  it('refuses an all-day --end before --start', () => {
+    expect(plan({ title: 'x', start: '2026-11-03', end: '2026-11-01', 'all-day': true })).toEqual({
+      ok: false,
+      error: '--end must not be before --start',
+    });
+  });
+
+  it('keeps local wall-clock times across daylight-saving changes', () => {
+    // 2026-11-01 01:30 happens twice in Los Angeles; 2027-03-14 02:30 never happens. The body passes the
+    // wall-clock time and zone through unchanged and Google resolves it, so the planner must not reject or
+    // shift either one.
+    for (const start of ['2026-11-01T01:30', '2027-03-14T02:30']) {
+      const p = plan({ title: 'x', start });
+      expect(p.ok).toBe(true);
+      if (!p.ok) return;
+      expect(p.body.start).toEqual({ dateTime: `${start}:00`, timeZone: TZ });
+    }
   });
 
   it('turns reminders into popup overrides', () => {
@@ -94,7 +120,8 @@ describe('planCalendarEvent', () => {
   });
 
   it('bounds duration, the past, and how far ahead', () => {
-    expect(plan({ title: 'x', start: '2026-11-01', end: '2026-11-20', 'all-day': true }).ok).toBe(false);
+    expect(plan({ title: 'x', start: '2026-11-01', end: '2026-11-14', 'all-day': true }).ok).toBe(true);
+    expect(plan({ title: 'x', start: '2026-11-01', end: '2026-11-15', 'all-day': true }).ok).toBe(false);
     expect(plan({ title: 'x', start: '2026-10-10T09:00' })).toEqual({ ok: false, error: '--start is in the past' });
     expect(plan({ title: 'x', start: '2027-12-01T09:00' }).ok).toBe(false);
   });
