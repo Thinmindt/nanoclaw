@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh the coding agents' repository mirrors every hour
+
+[Timer]
+# Every hour at :40, so a run finishes shortly before an agent pass on the hour.
+OnCalendar=*-*-* *:40:00
+# Run once at start-up if the machine was off or asleep at a scheduled time.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
