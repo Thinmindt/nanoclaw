@@ -5,6 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# The user manager's default PATH leaves out per-user installs of gitleaks.
+Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=%h/bin/refresh-mirrors.sh
 Nice=10
 TimeoutStartSec=30min
