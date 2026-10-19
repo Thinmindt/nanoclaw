@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh and secret-scan the coding agents' repository mirrors
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/bin/refresh-mirrors.sh
+Nice=10
+TimeoutStartSec=30min
