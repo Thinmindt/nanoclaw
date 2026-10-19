@@ -165,6 +165,23 @@ describe('a2a-gate on messages to the scout', () => {
     expect(inboundTexts(SCOUT, scout.id)).toHaveLength(0);
   });
 
+  it.each([
+    ['a quoted reply', { text: 'a clean question', replyTo: { id: 'x', text: 'Hollyhock' } }, 'replyTo'],
+    ['a list of links', { text: 'a clean question', links: ['https://example.com/leak'] }, 'links'],
+    ['a non-string text', { text: ['Hollyhock'] }, 'text'],
+    ['file names that are not strings', { text: 'a clean question', files: [{ name: 'x' }] }, 'files'],
+  ])('refuses %s, since the gate reads only text and files', async (_, content, field) => {
+    const msg = { id: `msg-${field}`, platform_id: SCOUT, content: JSON.stringify(content), in_reply_to: null };
+    await expect(routeAgentMessage(msg, architect)).rejects.toThrow(/refused \(fields\)$/);
+    expect(inboundTexts(SCOUT, scout.id)).toHaveLength(0);
+    expect(inboundTexts(ARCHITECT, architect.id)[0]).toContain(`carries fields other than its text ("${field}")`);
+  });
+
+  it('refuses an invisible character that would split a private term', async () => {
+    await expect(send(architect, SCOUT, 'About the Holly\u200Bhock service')).rejects.toThrow(/refused \(invisible\)$/);
+    expect(inboundTexts(SCOUT, scout.id)).toHaveLength(0);
+  });
+
   it('refuses every gated message when the term lists are missing', async () => {
     fs.rmSync(path.join(GATE_DIR, 'canaries'));
     await expect(send(architect, SCOUT, 'a clean question')).rejects.toThrow(/term lists unreadable/);

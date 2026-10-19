@@ -19,6 +19,8 @@
  * removes the shapes that are built to be mistaken for the harness.
  */
 
+import { INVISIBLE } from './scrub.js';
+
 /** Longest answer text that may arrive, in characters. Three questions with sources fit; a page dump does not. */
 export const MAX_ANSWER_CHARS = 8000;
 
@@ -28,13 +30,6 @@ export interface SanitizedAnswer {
   removed: { attachments: number; tags: number; invisibles: number; lines: number };
   truncated: boolean;
 }
-
-// Control characters (except tab and newline), soft hyphen, zero-width and
-// joiner characters, bidi controls, the byte-order mark, interlinear
-// annotation, and the tag block used to hide text inside emoji sequences.
-const INVISIBLE =
-  // eslint-disable-next-line no-control-regex -- the control characters are the point of the rule
-  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]|[\u{E0000}-\u{E007F}]/gu;
 
 // An HTML or XML tag, comment, or processing instruction, up to a sane length.
 const TAG = /<\/?[a-z!?][^<>]{0,200}>/gi;
