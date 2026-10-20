@@ -16,3 +16,4 @@ import './approvals.js';
 import './sessions.js';
 import './tasks.js';
 import './calendar.js';
+import './playground.js';

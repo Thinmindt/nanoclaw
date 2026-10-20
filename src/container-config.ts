@@ -414,11 +414,14 @@ export async function materializeContainerJson(agentGroupId: string): Promise<Co
   if (!row) throw new Error(`Container config not found for agent group: ${agentGroupId}`);
 
   const config = configFromDb(row, group);
+  // add-tool-denylist skill: built-in tools the operator switched off for this group.
+  const { toolDenylistFor } = await import('./modules/tool-denylist/index.js');
+  const disallowedTools = toolDenylistFor(agentGroupId, config.provider);
 
   const p = path.join(GROUPS_DIR, group.folder, 'container.json');
   const dir = path.dirname(p);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(p, JSON.stringify(config, null, 2) + '\n');
+  fs.writeFileSync(p, JSON.stringify(disallowedTools.length ? { ...config, disallowedTools } : config, null, 2) + '\n');
 
   return config;
 }

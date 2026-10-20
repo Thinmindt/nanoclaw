@@ -21,6 +21,8 @@ export interface RunnerConfig {
   model?: string;
   effort?: string;
   speed?: ProviderSpeed;
+  /** Tools the operator switched off for this group (add-tool-denylist skill). */
+  disallowedTools: string[];
 }
 
 const DEFAULT_MAX_MESSAGES = 10;
@@ -58,6 +60,9 @@ export function runnerConfigFromRaw(raw: Record<string, unknown>): RunnerConfig 
     model: (raw.model as string) || undefined,
     effort: (raw.effort as string) || undefined,
     speed: readSpeed(raw),
+    disallowedTools: Array.isArray(raw.disallowedTools)
+      ? raw.disallowedTools.filter((t): t is string => typeof t === 'string' && t !== '')
+      : [],
   };
 }
 

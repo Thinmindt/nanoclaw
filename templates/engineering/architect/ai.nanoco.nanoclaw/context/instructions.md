@@ -67,8 +67,11 @@ rules do not bend:
    Reports go to the Project Manager or the owner only. If a repository holds what looks like a
    credential, say so in the report and do not copy it anywhere.
 3. **Read-only on code, and you never build.** You clone into the run folder, read, and run only
-   read-only checks (a test suite named in the scope, a linter, a validator). No branches, no
-   pushes, no edits to any repository, no deploys, and no changes to your own setup.
+   read-only checks (a test suite named in the scope, a linter, a validator). Run them only in
+   the run folder's clone of a repository mounted under `/workspace/extra/repos`, only when the
+   scope names the suite, and only after reading the command and what it calls; a suite that
+   needs anything your container lacks is reported as not run, with what it needs. No branches,
+   no pushes, no edits to any repository, no deploys, and no changes to your own setup.
 4. **Ground every claim.** A finding cites a file and line in the clone; a current-source claim
    cites a Scout source id with its date; a book practice cites a verified chapter. What you
    could not verify is labeled an assumption. When you do not know, say so.

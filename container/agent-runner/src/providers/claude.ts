@@ -215,6 +215,7 @@ export class ClaudeProvider implements AgentProvider {
   private executionPolicy: ReturnType<typeof resolveClaudeExecutionPolicy>;
   private env: Record<string, string | undefined>;
   private additionalDirectories?: string[];
+  private groupDisallowedTools: string[];
   private memorySessionHook?: MemorySessionHookRegistration;
 
   /**
@@ -226,6 +227,7 @@ export class ClaudeProvider implements AgentProvider {
     this.assistantName = options.assistantName;
     this.mcp = configuration.mcpServers as ReturnType<typeof resolveClaudeMcpServers>;
     this.additionalDirectories = options.additionalDirectories;
+    this.groupDisallowedTools = options.disallowedTools ?? [];
     this.inference = configuration.inference as ReturnType<typeof resolveClaudeInference>;
     this.executionPolicy = configuration.executionPolicy as ReturnType<typeof resolveClaudeExecutionPolicy>;
     this.env = {
@@ -283,7 +285,7 @@ export class ClaudeProvider implements AgentProvider {
           ? { type: 'preset' as const, preset: 'claude_code' as const, append: instructions, snapshot: false }
           : undefined,
         allowedTools: [...this.mcp.allowedTools],
-        disallowedTools: [...this.executionPolicy.disallowedTools],
+        disallowedTools: [...this.executionPolicy.disallowedTools, ...this.groupDisallowedTools],
         // The SDK emits `assistant` only per completed content block, so a long
         // block is silent and the host sweep kills the container mid-generation.
         // Streaming deltas are the liveness signal for that window; translateEvents

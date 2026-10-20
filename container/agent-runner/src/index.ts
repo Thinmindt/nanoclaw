@@ -126,6 +126,7 @@ async function main(): Promise<void> {
     model: config.model,
     effort: config.effort,
     speed: config.speed,
+    disallowedTools: config.disallowedTools,
   });
   registerProviderMemorySessionHook(providerName, provider, MEMORY_SESSION_HOOK);
 

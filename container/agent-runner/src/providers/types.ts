@@ -92,6 +92,11 @@ export interface ProviderOptions {
    * keeps the provider default; a tier it did not declare never reaches it.
    */
   speed?: ProviderSpeed;
+  /**
+   * Tools the operator switched off for this group, added to the provider's own
+   * disallowed list (add-tool-denylist skill). Providers without a tool list ignore it.
+   */
+  disallowedTools?: string[];
 }
 
 export interface QueryInput {
