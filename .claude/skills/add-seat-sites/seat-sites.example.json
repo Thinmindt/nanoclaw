@@ -1,0 +1,12 @@
+{
+  "seats": {
+    "ag-00000000-0000-0000-0000-000000000001": {
+      "label": "project-manager",
+      "hosts": ["en.wikipedia.org", "www.etymonline.com"]
+    },
+    "ag-00000000-0000-0000-0000-000000000002": {
+      "label": "steward",
+      "hosts": ["en.wiktionary.org", "www.gutenberg.org"]
+    }
+  }
+}
