@@ -1,6 +1,6 @@
 ---
 name: add-playground
-description: Add `ncl playground run`, which runs an agent's Node project in a sandbox container with no network, no gateway, and no mounts of the agent's, and hands back the output, a video of every frame it saved, a few stills, and any other files it wrote. Use when an agent that holds private data (mail, a calendar, private code) wants to run code it did not write, or code another agent wrote, without that code running next to its credentials.
+description: Add `ncl playground-run`, which runs an agent's Node project in a sandbox container with no network, no gateway, and no mounts of the agent's, and hands back the output, a video of every frame it saved, a few stills, and any other files it wrote. Use when an agent that holds private data (mail, a calendar, private code) wants to run code it did not write, or code another agent wrote, without that code running next to its credentials.
 ---
 
 # Add playground
@@ -13,7 +13,7 @@ The playground moves the run somewhere with no reach at all.
 The agent names a project folder and the file to start:
 
 ```bash
-ncl playground run --dir /workspace/extra/particle-life --entry main.js [--timeout 60] [--fps 30]
+ncl playground-run --dir /workspace/extra/particle-life --entry main.js [--timeout 60] [--fps 30]
 ```
 
 `--dir` is a folder as the agent sees it: under `/workspace/agent`, or under one of its read-only
@@ -22,7 +22,7 @@ mounts in `/workspace/extra` (another agent's project, say). The script's own ar
 flag, so arguments like `--seed 3` go through `--stdin-json`:
 
 ```bash
-echo '{"args": ["--seed", "3"]}' | ncl playground run --dir /workspace/extra/particle-life --entry main.js --stdin-json
+echo '{"args": ["--seed", "3"]}' | ncl playground-run --dir /workspace/extra/particle-life --entry main.js --stdin-json
 ```
 
 The host reads the folder once, one level at a time by descriptor, refusing links and special files
@@ -144,7 +144,7 @@ Ask the agent to run a short Node script that saves frames:
 
 > Write a Node script, standard library only, that moves 50 dots around a 200x200 image for 300
 > steps, saving each step as frame-0001.png, frame-0002.png and so on (zlib is built in), plus a
-> summary.json, then run it with `ncl playground run`.
+> summary.json, then run it with `ncl playground-run`.
 
 It should come back with exit 0, 300 frames, a video, some stills and `summary.json` under
 `/workspace/agent/playground/`. Then ask it to run a script that calls `fetch('https://example.com')`;
