@@ -30,10 +30,34 @@ export interface ScrubOptions {
 
 export interface ScrubHit {
   /** Which rule refused. `canary` hits are also logged as a tripwire. */
-  rule: 'attachments' | 'size' | 'canary' | 'url' | 'host' | 'ip' | 'email' | 'path' | 'token' | 'private-term';
+  rule:
+    | 'fields'
+    | 'attachments'
+    | 'size'
+    | 'invisible'
+    | 'canary'
+    | 'url'
+    | 'host'
+    | 'ip'
+    | 'email'
+    | 'path'
+    | 'token'
+    | 'private-term';
   /** The matched text, cut short, for the note to the sender. */
   match: string;
 }
+
+/**
+ * Control characters (except tab and newline), soft hyphen, zero-width and
+ * joiner characters, bidi controls, the byte-order mark, interlinear
+ * annotation, and the tag block used to hide text inside emoji sequences.
+ * Outbound they refuse the message: they split a term so it no longer
+ * matches, and the tag block can carry a whole hidden sentence. Inbound
+ * (./inbound.ts) they are removed.
+ */
+export const INVISIBLE =
+  // eslint-disable-next-line no-control-regex -- the control characters are the point of the rule
+  /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]|[\u{E0000}-\u{E007F}]/gu;
 
 // Bare-host detection needs a list of endings; the scheme-less URL rule below
 // catches any dotted name followed by a path whatever its ending. Two-letter
@@ -173,13 +197,18 @@ function clip(s: string): string {
 }
 
 /**
- * Returns the first hit, or null when the message may cross. Attachments and
- * size refuse before the text is read; canaries are checked next so that a
+ * Returns the first hit, or null when the message may cross. Attachments,
+ * size and invisible characters refuse before the text is read; canaries are checked next so that a
  * lifted document trips the wire whatever else it carries.
  */
 export function scrubForScout(rawText: string, files: string[], opts: ScrubOptions): ScrubHit | null {
   if (files.length > 0) return { rule: 'attachments', match: clip(files.join(', ')) };
   if (rawText.length > opts.maxChars) return { rule: 'size', match: `${rawText.length} characters` };
+  const invisible = rawText.match(INVISIBLE);
+  if (invisible) {
+    const cp = invisible[0].codePointAt(0)!;
+    return { rule: 'invisible', match: `U+${cp.toString(16).toUpperCase().padStart(4, '0')}` };
+  }
 
   const text = foldText(rawText);
   const lower = text.toLowerCase();

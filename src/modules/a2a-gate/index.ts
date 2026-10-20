@@ -13,7 +13,10 @@
  * so whatever reaches it may reach any page it opens. Every other pair is
  * untouched.
  *
- * It refuses attachments, oversize text, links, host names, addresses,
+ * It refuses content fields other than `text` and `files` (the target's
+ * formatter renders more of them, such as a quoted reply or a list of links,
+ * and the gate reads only these two), attachments, oversize text, invisible
+ * characters, links, host names, addresses,
  * paths, mail addresses, opaque blobs, and any term in the operator's two
  * lists under `data/a2a-gate/`: `private-terms` (names, projects, hosts that
  * must never leave the machine) and `canaries` (strings planted in private
@@ -52,8 +55,10 @@ const GATE_DIR = path.join(DATA_DIR, 'a2a-gate');
 const MAX_CHARS = 4000;
 
 const EXPLANATIONS: Record<ScrubHit['rule'], string> = {
+  fields: 'carries fields other than its text',
   attachments: 'carries an attachment',
   size: 'is longer than the gate allows',
+  invisible: 'contains an invisible character',
   url: 'contains a link',
   host: 'contains a host name',
   ip: 'contains an IP address',
@@ -98,20 +103,31 @@ async function gatedGroup(id: string): Promise<{ gated: boolean; name: string }>
   return { gated: name.toLowerCase() === GATED_NAME || readTargets().includes(id), name };
 }
 
-function parseContent(content: unknown): { text: string; files: string[] } {
-  if (typeof content !== 'string') return { text: '', files: [] };
+/**
+ * The text and file names of a message, plus `unchecked`: any other field the
+ * target would see. Only a string `text` and a `files` list are read by the
+ * rules, so anything else (a quoted reply, links, a non-string text) is named
+ * here and refused.
+ */
+function parseContent(content: unknown): { text: string; files: string[]; unchecked: string[] } {
+  if (typeof content !== 'string') return { text: '', files: [], unchecked: [] };
+  let parsed: unknown;
   /* eslint-disable no-catch-all/no-catch-all -- plain text is a valid content shape */
   try {
-    const parsed = JSON.parse(content) as { text?: unknown; files?: unknown };
-    return {
-      text: typeof parsed.text === 'string' ? parsed.text : '',
-      files: Array.isArray(parsed.files) ? parsed.files.filter((f): f is string => typeof f === 'string') : [],
-    };
+    parsed = JSON.parse(content);
   } catch {
     // Not JSON: the content is the text itself.
-    return { text: content, files: [] };
+    return { text: content, files: [], unchecked: [] };
   }
   /* eslint-enable no-catch-all/no-catch-all */
+  if (typeof parsed !== 'object' || parsed === null) return { text: '', files: [], unchecked: [] };
+  const fields = parsed as Record<string, unknown>;
+  const text = typeof fields.text === 'string' ? fields.text : '';
+  const files = Array.isArray(fields.files) ? fields.files.filter((f): f is string => typeof f === 'string') : [];
+  const read = (k: string) =>
+    (k === 'text' && typeof fields.text === 'string') ||
+    (k === 'files' && Array.isArray(fields.files) && files.length === fields.files.length);
+  return { text, files, unchecked: Object.keys(fields).filter((k) => !read(k)) };
 }
 
 /**
@@ -141,8 +157,11 @@ export async function vetoA2aContent(input: GuardInput): Promise<string | null> 
   }
   /* eslint-enable no-catch-all/no-catch-all */
 
-  const { text, files } = parseContent(input.payload.content);
-  const hit = scrubForScout(text, files, { maxChars: MAX_CHARS, privateTerms, canaries });
+  const { text, files, unchecked } = parseContent(input.payload.content);
+  const hit: ScrubHit | null =
+    unchecked.length > 0
+      ? { rule: 'fields', match: unchecked.join(', ') }
+      : scrubForScout(text, files, { maxChars: MAX_CHARS, privateTerms, canaries });
   if (!hit) return null;
 
   if (hit.rule === 'canary') {

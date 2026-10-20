@@ -19,8 +19,10 @@ because a sender can add labels. No model is consulted. It refuses:
 
 | Rule | What it stops |
 |------|---------------|
+| fields | any content field besides a string `text` and a list of file names: the target would see a quoted reply, links, or app context that the rules below never read |
 | attachments | any file, whatever its name |
 | size | text over 4000 characters, which is a document, not a question |
+| invisible | control, zero-width, bidi, soft-hyphen, and tag-block characters: they split a term so it no longer matches, and the tag block can hide a whole sentence |
 | url, host, ip, email | links with a scheme, `www.`, or a dotted name followed by a path; bare host names on a known ending, also spelled out (`example dot com`, `exfil[.]com`); IPv4/IPv6 addresses; mail addresses |
 | path | absolute, relative with two or more slashes, home-relative, and Windows paths |
 | token | base64 runs of 40 or more with a digit or symbol, hex runs of 32 or more, and any whitespace-free token of 48 or more |
