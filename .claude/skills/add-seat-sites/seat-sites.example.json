@@ -2,11 +2,27 @@
   "seats": {
     "ag-00000000-0000-0000-0000-000000000001": {
       "label": "project-manager",
-      "hosts": ["en.wikipedia.org"]
+      "hosts": [
+        "en.wikipedia.org",
+        "api.github.com/repos/example-owner/example-repo/pulls",
+        "api.github.com/repos/example-owner/example-repo/branches"
+      ],
+      "notes": [
+        "A 403 is the site refusing; no credential fixes it, and the gateway's add-a-credential link is never followed."
+      ]
     },
     "ag-00000000-0000-0000-0000-000000000002": {
       "label": "steward",
-      "hosts": ["en.wiktionary.org/wiki/", "extension.oregonstate.edu"]
+      "hosts": [
+        "en.wiktionary.org/wiki/",
+        {
+          "site": "openlibrary.org",
+          "limit": 6,
+          "per": "minute",
+          "note": "leave 10 seconds between requests; the site asked for one every ten"
+        },
+        { "site": "archive.org/details/", "limit": 50, "per": "day", "note": "catalog pages; never web.archive.org" }
+      ]
     }
   }
 }
