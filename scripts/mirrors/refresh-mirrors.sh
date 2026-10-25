@@ -13,7 +13,7 @@
 # After a clean refresh, $MIRRORS_DIR/README.md gets one line per mirror:
 #   last-refresh: <name> <local time, ISO 8601> <branch>@<short sha>
 # A mirror with no origin URL is fed by the owner's pushes; it is not fetched or
-# scanned here, and its line names the date of its newest commit instead.
+# scanned here, and its line shows the time of its newest commit instead.
 #
 # Reviewed false positives live in <mirror>/.gitleaksignore (gitleaks fingerprints).
 set -uo pipefail
@@ -42,6 +42,8 @@ fi
 
 command -v "$GITLEAKS" >/dev/null || { echo "gitleaks not found ($GITLEAKS)" >&2; exit 1; }
 [ -d "$MIRRORS_DIR" ] || { echo "no mirrors directory: $MIRRORS_DIR" >&2; exit 1; }
+SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/refresh-mirrors.XXXXXX") || exit 1
+trap 'rm -rf "$SCRATCH"' EXIT
 
 fingerprints() { grep -o '"Fingerprint": *"[^"]*"' "$1" | sed 's/.*"Fingerprint": *"//; s/"$//'; }
 
@@ -72,54 +74,44 @@ set_readme_line() {
   mv -f "$tmp" "$README"
 }
 
+# Commits that are in the scratch copy but not yet in the mirror: the scratch copy
+# borrows the mirror's objects, so the mirror's refs are its "alternate refs".
+NEW_COMMITS="--all --not --alternate-refs"
+
 refresh_fetched() {
-  local scratch rc
-  scratch=$(mktemp -d "${TMPDIR:-/tmp}/mirror-$1.XXXXXX") || return 1
-  fetch_scan_update "$@" "$scratch"
-  rc=$?
-  rm -rf "$scratch"
-  return "$rc"
-}
+  local name="$1" mirror="$2" url="$3" scratch="$SCRATCH/$1" report="$SCRATCH/$1.json" new rc found
 
-fetch_scan_update() {
-  local name="$1" mirror="$2" url="$3" scratch="$4" report rc new old_refs
-
-  # Scratch copy that borrows the mirror's objects; only new objects land in it.
-  git clone --quiet --mirror --shared "$mirror" "$scratch/repo" || { echo "$name: scratch copy failed" >&2; return 1; }
-  git -C "$scratch/repo" remote set-url origin "$url"
-  git -C "$scratch/repo" config --unset-all remote.origin.fetch
-  git -C "$mirror" config --get-all remote.origin.fetch | while read -r spec; do
-    git -C "$scratch/repo" config --add remote.origin.fetch "$spec"
-  done
-  [ -f "$mirror/.gitleaksignore" ] && cp "$mirror/.gitleaksignore" "$scratch/repo/.gitleaksignore"
-
-  old_refs=$(git -C "$mirror" for-each-ref --format='^%(objectname)' | sort -u | paste -sd' ' -)
-  git -C "$scratch/repo" fetch --quiet --prune origin || { echo "$name: fetch failed" >&2; return 1; }
+  # The scratch copy shares the mirror's objects; only fetched objects land in it.
+  git clone --quiet --mirror --shared "$mirror" "$scratch" || { echo "$name: scratch copy failed" >&2; return 1; }
+  # shellcheck disable=SC2046
+  git -C "$scratch" fetch --quiet --prune "$url" $(git -C "$mirror" config --get-all remote.origin.fetch) \
+    || { echo "$name: fetch failed" >&2; return 1; }
 
   # shellcheck disable=SC2086
-  new=$(git -C "$scratch/repo" rev-list --count --all $old_refs) || { echo "$name: could not list new commits" >&2; return 1; }
+  new=$(git -C "$scratch" rev-list --count $NEW_COMMITS) || { echo "$name: could not list new commits" >&2; return 1; }
   if [ "$new" -gt 0 ]; then
-    report="$scratch/report.json"
-    "$GITLEAKS" detect --no-banner --redact --source "$scratch/repo" \
-      --log-opts "--all $old_refs" --report-format json --report-path "$report" >/dev/null 2>&1
+    [ -f "$mirror/.gitleaksignore" ] && cp "$mirror/.gitleaksignore" "$scratch/"
+    "$GITLEAKS" detect --no-banner --redact --source "$scratch" --log-opts "$NEW_COMMITS" \
+      --report-format json --report-path "$report" >/dev/null 2>&1
     rc=$?
-    if [ "$rc" -ne 0 ]; then
-      if [ ! -s "$report" ] || [ "$(tr -d '[:space:]' <"$report")" = "[]" ]; then
-        echo "$name: gitleaks failed (exit $rc) without a report; mirror left as it was" >&2
-        return 1
-      fi
+    found=$(fingerprints "$report" 2>/dev/null)
+    if [ "$rc" -ne 0 ] && [ -z "$found" ]; then
+      echo "$name: gitleaks failed (exit $rc) without a report; mirror left as it was" >&2
+      return 1
+    fi
+    if [ -n "$found" ]; then
       echo "$name: gitleaks found possible secrets among $new new commit(s); mirror left as it was:" >&2
-      fingerprints "$report" | sed 's/^/  /' >&2
+      sed 's/^/  /' <<<"$found" >&2
       if [ "$accept" != "$name" ]; then
         echo "$name: after review, baseline them with: $0 --accept $name" >&2
         return 1
       fi
-      fingerprints "$report" >>"$mirror/.gitleaksignore"
+      printf '%s\n' "$found" >>"$mirror/.gitleaksignore"
       echo "$name: baselined the findings above in $mirror/.gitleaksignore" >&2
     fi
   fi
 
-  git -C "$mirror" fetch --quiet --prune "$scratch/repo" '+refs/*:refs/*' || { echo "$name: updating the mirror failed" >&2; return 1; }
+  git -C "$mirror" fetch --quiet --prune "$scratch" '+refs/*:refs/*' || { echo "$name: updating the mirror failed" >&2; return 1; }
   set_readme_line "$name" "last-refresh: $name $(date --iso-8601=seconds) $(head_label "$mirror")"
   echo "$name: refreshed ($new new commit(s))"
 }
@@ -127,7 +119,7 @@ fetch_scan_update() {
 refresh_pushed() {
   local name="$1" mirror="$2" newest
   newest=$(git -C "$mirror" for-each-ref --sort=-committerdate --count=1 --format='%(committerdate:iso-strict)' refs/heads)
-  set_readme_line "$name" "last-refresh: $name ${newest:-empty} $(head_label "$mirror") (pushed by the owner, not fetched; date is the newest commit)"
+  set_readme_line "$name" "last-refresh: $name ${newest:-empty} $(head_label "$mirror") (push-fed: time of newest commit)"
   echo "$name: pushed mirror, not fetched"
 }
 

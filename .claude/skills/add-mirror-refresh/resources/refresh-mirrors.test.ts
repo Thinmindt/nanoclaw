@@ -104,7 +104,7 @@ describe('refresh-mirrors.sh', () => {
     const r = refresh();
     expect(r.status, r.stderr).toBe(0);
     expect(mirrorHead()).toBe(sha);
-    expect(scanLog()).toMatch(/^--all \^[0-9a-f]{40}$/m);
+    expect(scanLog()).toBe('--all --not --alternate-refs\n');
     expect(readme()).toContain('canary: test-canary');
     expect(readme()).toMatch(new RegExp(`^last-refresh: project \\S+ main@${sha}$`, 'm'));
 
@@ -172,9 +172,7 @@ describe('refresh-mirrors.sh', () => {
     git(path.join(root, 'upstream'), 'push', '-q', path.join(root, 'repos', 'pushed'), 'main');
     const r = refresh();
     expect(r.status, r.stderr).toBe(0);
-    expect(readme()).toMatch(
-      /^last-refresh: pushed \S+ main@[0-9a-f]+ \(pushed by the owner, not fetched; date is the newest commit\)$/m,
-    );
+    expect(readme()).toMatch(/^last-refresh: pushed \S+ main@[0-9a-f]+ \(push-fed: time of newest commit\)$/m);
     expect(readme()).toMatch(/^last-refresh: project /m);
   });
 

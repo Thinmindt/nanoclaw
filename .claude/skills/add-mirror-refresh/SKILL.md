@@ -24,8 +24,8 @@ history reach an agent:
 
   A failed refresh leaves the line as it was, so a stale date is the signal.
 - **Push-fed mirrors:** a mirror with no origin URL is fed by the owner's pushes. It is not fetched
-  or scanned here; its line shows the date of its newest commit, marked `(pushed by the owner, not
-  fetched; date is the newest commit)`.
+  or scanned here; its line shows the time of its newest commit, marked `(push-fed: time of newest
+  commit)`.
 - **Schedule:** a systemd user timer runs the refresh every hour at :40, so a run finishes shortly
   before an agent's pass on the hour. `Persistent=true` catches up on a run missed while the machine
   was off. Runs never overlap (a second one exits at once).
