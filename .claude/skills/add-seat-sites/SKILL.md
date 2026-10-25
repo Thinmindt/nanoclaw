@@ -1,6 +1,6 @@
 ---
 name: add-seat-sites
-description: Give chosen agents read-only access to a vetted list of exact web hosts, one OneCLI gateway rule per agent ("seat"), with a dry run first. Use when agents ask for sites to read, so that one list the owner vetted is granted per seat as the rows that seat asked for, never as a shared allowlist.
+description: Give chosen agents read-only access to a vetted list of exact web hosts, each optionally limited to one path prefix, one OneCLI gateway rule per agent ("seat"), with a dry run first. Use when agents ask for sites to read, so that one list the owner vetted is granted per seat as the rows that seat asked for, never as a shared allowlist.
 ---
 
 # Add seat sites
@@ -15,16 +15,21 @@ The operator keeps the vetted list in `data/seat-sites.json`, on the host, out o
 reach (`seat-sites.example.json` shows the shape):
 
 ```json
-{ "seats": { "<agent-group-id>": { "label": "project-manager", "hosts": ["github.com"] } } }
+{ "seats": { "<agent-group-id>": { "label": "steward", "hosts": ["github.com", "en.wiktionary.org/wiki/"] } } }
 ```
 
 `scripts/seat-sites.ts` turns it into gateway rules. For each seat it keeps one rule, named
-`Seat sites: <label>`: allow GET to exactly those hosts, for that seat's gateway agent only (the
+`Seat sites: <label>`: allow GET to exactly those sites, for that seat's gateway agent only (the
 agent's identifier is its group id). The rule is checked strictly:
 
-- **Exact hosts.** No wildcards, schemes, ports, paths, IP addresses, or private names (`.local`,
+- **Exact hosts.** No wildcards, schemes, ports, IP addresses, or private names (`.local`,
   `.lan`, `.internal`, `.home.arpa` and the like). A subdomain the seat needs is named on its own
   row: `api.github.com` is not implied by `github.com`.
+- **At most one path prefix per row.** `en.wiktionary.org/wiki/` allows only paths under `/wiki/`
+  (the gateway glob `/wiki/*`), for a site whose terms or robots file keep bots to its pages and
+  off its API. The prefix is plain directories, ending in `/` so that `/wiki/` cannot also cover
+  `/wikipedia-dump`. A row with a prefix beside the bare host it belongs to is refused, because the
+  bare host would quietly widen the grant.
 - **GET only.** A page cannot turn the seat into a way to post. The gateway's rules cannot express
   HEAD separately.
 - **Every hop.** A redirect is a new request through the gateway, so a host on the list that

@@ -2,11 +2,11 @@
   "seats": {
     "ag-00000000-0000-0000-0000-000000000001": {
       "label": "project-manager",
-      "hosts": ["en.wikipedia.org", "www.etymonline.com"]
+      "hosts": ["en.wikipedia.org"]
     },
     "ag-00000000-0000-0000-0000-000000000002": {
       "label": "steward",
-      "hosts": ["en.wiktionary.org", "www.gutenberg.org"]
+      "hosts": ["en.wiktionary.org/wiki/", "extension.oregonstate.edu"]
     }
   }
 }

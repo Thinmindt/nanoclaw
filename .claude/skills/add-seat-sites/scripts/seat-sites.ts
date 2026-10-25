@@ -6,10 +6,12 @@
  *   { "seats": { "<agent-group-id>": { "label": "project-manager", "hosts": ["github.com"] } } }
  *
  * and, for each seat, keeps one gateway rule named `Seat sites: <label>`:
- * allow GET to exactly those hosts for that seat's gateway agent (its
- * identifier is the agent group id). Hosts are exact names: no wildcards,
- * schemes, ports, paths, IP addresses, or private names. Each redirect hop is
- * a new request through the gateway, so it is checked against the same rules.
+ * allow GET to exactly those sites for that seat's gateway agent (its
+ * identifier is the agent group id). A row is an exact host name, optionally
+ * followed by one directory prefix (`en.wiktionary.org/wiki/`) that limits the
+ * seat to the paths under it. No wildcards, schemes, ports, IP addresses, or
+ * private names. Each redirect hop is a new request through the gateway, so
+ * it is checked against the same rules.
  *
  * The seat rules sit at the top of the rule order, so an exact-host GET is
  * allowed for that seat whatever rules below would say; every other rule keeps
@@ -35,10 +37,17 @@ import path from 'node:path';
 
 export const RULE_PREFIX = 'Seat sites: ';
 
+/** One row of the list: a host, and optionally the one directory prefix the seat may read under. */
+export interface Site {
+  host: string;
+  /** `/wiki/`: starts and ends with `/`. Absent means the whole host. */
+  path?: string;
+}
+
 export interface Seat {
   groupId: string;
   label: string;
-  hosts: string[];
+  sites: Site[];
 }
 
 export interface Rule {
@@ -71,6 +80,35 @@ export function hostProblem(host: unknown): string | null {
   return null;
 }
 
+const PATH_SEGMENT_RE = /^[A-Za-z0-9._~-]+$/;
+
+/**
+ * Why a path prefix is refused, or null when it names one directory of a site. A prefix ends
+ * with `/` so that `/wiki/` cannot also cover `/wikipedia-dump`.
+ */
+export function pathProblem(p: string): string | null {
+  if (!p.startsWith('/') || !p.endsWith('/')) return 'a path prefix starts and ends with /';
+  if (p === '/') return 'a prefix of / is the whole host; leave the path off';
+  if (/[*?#%\s]/.test(p)) return 'a plain path prefix only: no wildcards, query, fragment, encoding, or spaces';
+  const segments = p.slice(1, -1).split('/');
+  if (segments.some((s) => !PATH_SEGMENT_RE.test(s) || s === '.' || s === '..'))
+    return 'a path prefix is plain segments, none empty or dots';
+  return null;
+}
+
+/** Split a row at its first `/`: `github.com` is a host; `en.wiktionary.org/wiki/` is a host and a prefix. */
+export function toSite(row: string): Site {
+  const i = row.indexOf('/');
+  return i < 0 ? { host: row } : { host: row.slice(0, i), path: row.slice(i) };
+}
+
+/** Why a row is refused, or null when it is an exact public host with at most one path prefix. */
+export function rowProblem(row: unknown): string | null {
+  if (typeof row !== 'string') return 'not a string';
+  const { host, path } = toSite(row);
+  return hostProblem(host) ?? (path === undefined ? null : pathProblem(path));
+}
+
 /** Parse and validate data/seat-sites.json. Throws with every problem found. */
 export function parseSeats(text: string): Seat[] {
   const raw = JSON.parse(text) as unknown;
@@ -91,17 +129,27 @@ export function parseSeats(text: string): Seat[] {
       problems.push(`${groupId}: hosts must be a non-empty list`);
       continue;
     }
-    for (const h of hosts) {
-      const p = hostProblem(h);
-      if (p) problems.push(`${groupId}: ${JSON.stringify(h)}: ${p}`);
+    const rows = [...new Set(hosts)].sort();
+    for (const row of rows) {
+      const p = rowProblem(row);
+      if (p) problems.push(`${groupId}: ${JSON.stringify(row)}: ${p}`);
     }
-    out.push({ groupId, label: String(label), hosts: [...new Set(hosts as string[])].sort() });
+    const sites = rows.filter((row): row is string => rowProblem(row) === null).map(toSite);
+    // A bare host beside a prefix on it would quietly widen the grant to the whole host.
+    for (const s of sites) {
+      if (s.path && sites.some((o) => o.host === s.host && !o.path))
+        problems.push(`${groupId}: ${s.host}${s.path} is already covered by ${s.host}; keep one of them`);
+    }
+    out.push({ groupId, label: String(label), sites });
   }
   if (problems.length) throw new Error(`seat-sites.json refused:\n  ${problems.join('\n  ')}`);
   return out;
 }
 
-/** The one rule a seat gets: allow GET to its hosts, for its gateway agent only. */
+/**
+ * The one rule a seat gets: allow GET to its sites, for its gateway agent only. A prefix becomes the
+ * gateway's path glob `/wiki/*` (its `*` is any run of characters, `/` included).
+ */
 export function seatRule(seat: Seat, gatewayAgentId: string): Rule {
   return {
     name: RULE_PREFIX + seat.label,
@@ -109,7 +157,12 @@ export function seatRule(seat: Seat, gatewayAgentId: string): Rule {
     enabled: true,
     requireApproval: false,
     identities: [{ type: 'agent', id: gatewayAgentId }],
-    targets: seat.hosts.map((h) => ({ kind: 'network', hostPattern: h, method: 'GET' })),
+    targets: seat.sites.map((s) => ({
+      kind: 'network',
+      hostPattern: s.host,
+      ...(s.path ? { pathPattern: `${s.path}*` } : {}),
+      method: 'GET',
+    })),
   };
 }
 
@@ -159,7 +212,7 @@ export function overlapping(rules: Rule[], seat: Seat, gatewayAgentId: string): 
       !isOwned(r) &&
       (r.identities.length === 0 || r.identities.some((i) => i.id === gatewayAgentId)) &&
       r.targets.some(
-        (t) => t.hostPattern && t.hostPattern !== '*' && seat.hosts.some((h) => patternCovers(t.hostPattern!, h)),
+        (t) => t.hostPattern && t.hostPattern !== '*' && seat.sites.some((s) => patternCovers(t.hostPattern!, s.host)),
       ),
   );
 }

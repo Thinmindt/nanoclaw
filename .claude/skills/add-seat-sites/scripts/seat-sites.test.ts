@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { hostProblem, main, parseSeats, patternCovers, type Rule } from './seat-sites.js';
+import { hostProblem, main, parseSeats, patternCovers, rowProblem, type Rule } from './seat-sites.js';
 
 describe('hostProblem', () => {
   it('accepts exact public host names', () => {
@@ -43,6 +43,35 @@ describe('hostProblem', () => {
   });
 });
 
+describe('rowProblem', () => {
+  it('accepts a host alone or with one directory prefix', () => {
+    for (const r of ['github.com', 'en.wiktionary.org/wiki/', 'docs.example.org/en/stable/', 'a.org/v1.2/~x/']) {
+      expect(rowProblem(r), r).toBeNull();
+    }
+  });
+
+  it('refuses a prefix that is not one plain directory, and a bad host before any path', () => {
+    for (const r of [
+      'en.wiktionary.org/wiki', // no trailing slash: would also cover /wikipedia-dump
+      'en.wiktionary.org/',
+      'en.wiktionary.org/w/*',
+      'en.wiktionary.org/wiki/?x',
+      'en.wiktionary.org/wiki/#top',
+      'en.wiktionary.org/wiki%2F/',
+      'en.wiktionary.org//wiki/',
+      'en.wiktionary.org/./wiki/',
+      'en.wiktionary.org/../wiki/',
+      'en.wiktionary.org/wiki /',
+      'https://en.wiktionary.org/wiki/',
+      'nas.local/wiki/',
+      'EN.wiktionary.org/wiki/',
+      7,
+    ]) {
+      expect(rowProblem(r), String(r)).not.toBeNull();
+    }
+  });
+});
+
 describe('patternCovers', () => {
   it('matches exact names and * runs, nothing else', () => {
     expect(patternCovers('github.com', 'github.com')).toBe(true);
@@ -53,10 +82,24 @@ describe('patternCovers', () => {
 });
 
 describe('parseSeats', () => {
-  it('reads seats, dedupes and sorts hosts', () => {
+  it('reads seats, dedupes and sorts rows', () => {
     expect(parseSeats('{"seats":{"ag-1":{"label":"pm","hosts":["b.org","a.org","b.org"]}}}')).toEqual([
-      { groupId: 'ag-1', label: 'pm', hosts: ['a.org', 'b.org'] },
+      { groupId: 'ag-1', label: 'pm', sites: [{ host: 'a.org' }, { host: 'b.org' }] },
     ]);
+  });
+
+  it('splits a row with a prefix into host and path', () => {
+    expect(parseSeats('{"seats":{"ag-1":{"label":"st","hosts":["en.wiktionary.org/wiki/","a.org"]}}}')).toEqual([
+      { groupId: 'ag-1', label: 'st', sites: [{ host: 'a.org' }, { host: 'en.wiktionary.org', path: '/wiki/' }] },
+    ]);
+  });
+
+  it('refuses a prefix beside the bare host it belongs to, which would widen the grant', () => {
+    expect(() =>
+      parseSeats('{"seats":{"ag-1":{"label":"st","hosts":["en.wiktionary.org","en.wiktionary.org/wiki/"]}}}'),
+    ).toThrow(/en\.wiktionary\.org\/wiki\/ is already covered by en\.wiktionary\.org/);
+    // Two different prefixes on one host are fine.
+    expect(() => parseSeats('{"seats":{"ag-1":{"label":"st","hosts":["a.org/x/","a.org/y/"]}}}')).not.toThrow();
   });
 
   it('refuses the whole file on any bad entry, naming each problem', () => {
@@ -189,6 +232,20 @@ describe('seat-sites main', () => {
     ]);
     const scout = gw.published.find((r) => r.name === 'Scout: open GET')!;
     expect(scout.targets).toEqual(scoutOpen.targets);
+  });
+
+  it('a row with a prefix becomes a GET target on that host under the path glob', async () => {
+    fs.writeFileSync(
+      path.join(root, 'data', 'seat-sites.json'),
+      JSON.stringify({ seats: { 'ag-pm': { label: 'project-manager', hosts: ['en.wiktionary.org/wiki/'] } } }),
+    );
+    await run();
+    expect(lines.join('\n')).toContain('plan: allow "Seat sites: project-manager": GET en.wiktionary.org/wiki/*');
+    await run('--apply');
+    const mine = gw.published.find((r) => r.name === 'Seat sites: project-manager')!;
+    expect(mine.targets).toEqual([
+      { kind: 'network', hostPattern: 'en.wiktionary.org', pathPattern: '/wiki/*', method: 'GET' },
+    ]);
   });
 
   it('re-running replaces its own rule rather than adding a second', async () => {
