@@ -5,25 +5,31 @@ description: Add `ncl github pr-status` and `ncl github issue-status`, host-side
 
 # Add GitHub status
 
-An agent that keeps the owner's private plan must not read the open web, and a pull request on a
-public repository is a piece of it: anyone can comment there. A read-only gateway rule for GitHub's
-API would let the agent read every comment. This skill adds host-side commands as the agent's only
-view of GitHub:
+An agent that keeps the owner's private plan needs to follow pull requests and issues on the
+owner's repositories. This skill gives it host-side commands for that instead of a wider gateway
+grant. What the tool controls, in the order that matters (the same order as `add-seat-sites`):
 
-- **Fixed fields for every item:** number, state, draft, merged, head and base branch, labels,
-  dates, check counts with the names of failed checks, and who approved or requested changes.
-  Those are values, not prose.
-- **Text from the owner only:** a title, description, comment or branch name is passed on only when
-  its author is `GITHUB_STATUS_OWNER_LOGIN`. Anyone else's is replaced by a placeholder naming the
-  login (`[title by someone not shown]`), bots included. The owner's text is reduced to plain text
-  (tags and invisible characters removed) and capped: 200 characters for a title, 4000 for a
-  description, 2000 per comment, the newest 20 comments. The same reduction the Scout gate applies
-  to answers, kept local so this tool stands on its own.
-- **GET only, named repositories only:** the tool calls GitHub through the gateway as
-  `GITHUB_STATUS_GATEWAY_AGENT`, an identity whose policy allows GET and HEAD on
-  `api.github.com/repos/<owner>/<repo>/*` for the configured repositories and blocks everything
-  else. No input can turn it into a way to post, and the agent's own gateway identity keeps GitHub
-  blocked, so the tool can't be bypassed.
+1. **Egress.** The agent never calls GitHub. The host does, through the gateway as
+   `GITHUB_STATUS_GATEWAY_AGENT`, an identity whose policy allows GET on
+   `api.github.com/repos/<owner>/<repo>/*` for the configured repositories and blocks everything
+   else. The request shape is fixed by the tool: repository name from the configured list, a
+   number, a page size. No input can turn it into a way to post, and nothing the agent holds can
+   ride in a path or a query string. The agent's own identity gets GitHub only where the operator
+   grants it separately, as exact paths through `add-seat-sites`; this tool adds no reach to it.
+2. **Budget.** The tool identity's rule carries a rate limit (`GITHUB_STATUS_RATE_LIMIT_PER_HOUR`,
+   default 300). A list of open pull requests costs one request plus two per pull request.
+3. **Input.** A pull request on a public repository is stranger-written: anyone can comment there.
+   So the agent sees fixed fields for every item (number, state, draft, merged, head and base
+   branch, labels, dates, check counts with the names of failed checks, who approved or requested
+   changes) and free text only from the owner. A title, description, comment or branch name is
+   passed on only when its author is `GITHUB_STATUS_OWNER_LOGIN`; anyone else's is replaced by a
+   placeholder naming the login (`[title by someone not shown]`), bots included. The owner's text
+   is reduced to plain text (tags and invisible characters removed) and capped: 200 characters for
+   a title, 4000 for a description, 2000 per comment, the newest 20 comments. The same reduction
+   the Scout gate applies to answers, kept local so this tool stands on its own.
+
+Also:
+
 - **Chosen agents:** only agent groups in `GITHUB_STATUS_AGENT_GROUPS` may call it.
 - **No token for public repositories.** GitHub answers unauthenticated reads at 60 requests an hour
   per address; a list of open pull requests costs one request plus two per pull request. For
@@ -118,7 +124,7 @@ node .claude/skills/add-github-status/setup-gateway.mjs
 ```
 
 This creates the `github-status-tool` gateway agent if needed, makes it selective with no app
-connections, and publishes its two rules: allow GET and HEAD on `api.github.com` under
+connections, and publishes its two rules: allow GET on `api.github.com` under
 `/repos/<owner>/<repo>/` for each configured repository (rate-limited), block everything else.
 It never changes other agents' rules and never touches this identity's secret list. Re-run it
 after changing the repositories or the rate limit in `.env`.

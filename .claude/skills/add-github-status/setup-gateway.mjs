@@ -4,7 +4,7 @@
 // Reads ONECLI_URL and the GITHUB_STATUS_* keys from the project's .env, then:
 //   1. ensures a gateway agent with identifier GITHUB_STATUS_GATEWAY_AGENT exists,
 //   2. makes it selective (it never gets the whole vault) with no app connections,
-//   3. publishes its policy rules: allow GET and HEAD on api.github.com under
+//   3. publishes its policy rules: allow GET on api.github.com under
 //      /repos/<owner>/<repo>/ for each configured repository, rate-limited to
 //      GITHUB_STATUS_RATE_LIMIT_PER_HOUR (default 300), then block everything else.
 //
@@ -131,7 +131,7 @@ console.log(`agent ${identifier}: selective, no app connections (secrets left as
 
 const identity = [{ type: 'agent', id: agent.id }];
 const targets = repos.flatMap((r) =>
-  ['GET', 'HEAD'].map((method) => ({
+  ['GET'].map((method) => ({
     kind: 'network',
     hostPattern: 'api.github.com',
     pathPattern: `/repos/${r}/*`,
@@ -169,5 +169,5 @@ const rest = ordered.filter((r) => !mine.includes(r));
 await call('PUT', '/v1/policy/rules/order', { orderedIds: [...rest, ...mine].map((r) => r.id) });
 await call('POST', '/v1/policy/publish', {});
 console.log(
-  `published rules for ${identifier}: GET/HEAD api.github.com /repos/{${repos.join(',')}}/* (max ${rateLimit}/hour); everything else blocked`,
+  `published rules for ${identifier}: GET api.github.com /repos/{${repos.join(',')}}/* (max ${rateLimit}/hour); everything else blocked`,
 );

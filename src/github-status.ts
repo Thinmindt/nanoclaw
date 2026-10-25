@@ -13,7 +13,7 @@
  *     only when its author is `GITHUB_STATUS_OWNER_LOGIN`; anyone else's title,
  *     body, comment or branch name is replaced by a placeholder naming the
  *     login. Kept text is reduced to bounded plain text.
- *   - The gateway identity the tool calls as allows GET and HEAD on the
+ *   - The gateway identity the tool calls as allows GET on the
  *     configured repositories' API paths and nothing else, so no input can
  *     turn the tool into a way to post.
  */
@@ -38,7 +38,7 @@ export type GithubStatusConfig = {
   ownerLogin: string;
   /** Repositories by the short name the agent uses, in the order configured. */
   repos: Map<string, RepoRef>;
-  /** Gateway agent identifier the tool calls as; its policy allows GET/HEAD on these repos only. */
+  /** Gateway agent identifier the tool calls as; its policy allows GET on these repos only. */
   gatewayAgent: string;
   /** Agent groups allowed to call the tool. */
   agentGroups: Set<string>;
