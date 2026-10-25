@@ -29,6 +29,9 @@ groups
 .env
 .env*
 
+# Private terms for scripts/check_private.sh: this installation's names and addresses
+.private-terms
+
 # Temp files
 .tmp-*
 
