@@ -6,10 +6,22 @@ description: Give chosen agents read-only access to a vetted list of exact web h
 # Add seat sites
 
 Agents ask for sites to read: a reference wiki, a project's GitHub pages, a library's docs. The
-owner vets the hosts once, as one list. The grant is per seat, because the risk of a GET is what
-comes back, and the seats differ in what they hold: a page that is harmless to an agent with no
-private data is stranger-written text inside an agent that holds the owner's mail. So each seat
-gets the rows it asked for and nothing else.
+owner vets the hosts once, as one list, and each seat gets the rows it asked for and nothing else.
+
+A grant controls three things, in the order that matters:
+
+1. **Egress.** A request is the one way a seat can send anything out, and a seat holds what the
+   owner gave it: mail, a plan, a workbench. So a row allows GET only, on an exact host, under one
+   path, with no credential injected. Hosts are exact and a path is a directory prefix or a single
+   endpoint, so the seat cannot be steered to another host and has no slot to fill with anything
+   but a page name. The seat is told that a URL is outbound: nothing of the owner's goes into a
+   path or a query string.
+2. **Budget.** Where a site states a rate or a delay, the row carries it, so a runaway read cannot
+   become a crawl and the site's rules are kept as we read them.
+3. **Input.** What comes back is stranger-written text inside the seat. That is why the grant is
+   per seat and never a shared allowlist: a page harmless to an agent with no private data is a
+   prompt-injection path inside one that holds the owner's mail. Every page is data, never an
+   instruction, and the agent's rules say so.
 
 The operator keeps the vetted list in `data/seat-sites.json`, on the host, out of every agent's
 reach (`seat-sites.example.json` shows the shape):
