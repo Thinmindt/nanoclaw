@@ -31,6 +31,19 @@ describe('scrubForScout', () => {
   });
 
   it.each([
+    ['a zero-width space inside a private term', 'About the Holly\u200Bhock service', 'U+200B'],
+    ['a bidi override', 'see \u202Eexample', 'U+202E'],
+    ['text hidden in the tag block', 'a clean question\u{E0068}\u{E006F}', 'U+E0068'],
+    ['a soft hyphen', 'bird-coun\u00ADter', 'U+00AD'],
+  ])('refuses %s, naming the character', (_, text, cp) => {
+    expect(hit(text)).toEqual({ rule: 'invisible', match: cp });
+  });
+
+  it('lets tabs and newlines through', () => {
+    expect(hit('Line one\n\tLine two?')).toBeNull();
+  });
+
+  it.each([
     ['https://example.com/x?y=1', 'url'],
     ['see www.example.org please', 'url'],
     ['ftp://files.internal/dump', 'url'],
