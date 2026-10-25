@@ -74,8 +74,8 @@ systemctl --user restart $(systemd_unit)                 # Linux
 ```
 
 Then trigger a real approval card (for example an agent-to-agent message under `ncl policies set`) and
-press Approve: the card's footer reads `✅ Approved by <user>`, and the log line is `Approval approved`
-rather than `Approval rejected`.
+press Approve: the card's footer reads `✅ Approved by <user>`, and the log line is `Approval handled`
+(with the action in its fields) rather than `Approval rejected`.
 
 ## When to remove
 

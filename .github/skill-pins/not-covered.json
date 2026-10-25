@@ -84,6 +84,12 @@
       "kind": "version",
       "source": ".claude/skills/add-onecli/versions.json",
       "why": "read by the skill's own scripts; Dependabot does not read versions.json"
+    },
+    {
+      "pin": "node:22-bookworm-slim",
+      "kind": "container image (Dockerfile FROM)",
+      "source": ".claude/skills/add-playground/resources/Dockerfile",
+      "why": "a base image; Dependabot's docker ecosystem could read a Dockerfile, not configured"
     }
   ]
 }
