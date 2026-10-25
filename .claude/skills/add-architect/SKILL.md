@@ -10,7 +10,7 @@ it reviews a repository and reports gaps and risks, plans a design when asked, a
 verdict on a work item the Project Manager proposes. It never builds. It reads private
 repositories, so it has no web access; the Scout agent (`/add-scout`) does its current-source
 research one round at a time, behind the gate `/add-scout-gate` puts on what may cross. The
-design it implements is the owner's "Coding agents: target design" plan.
+design it implements is the owner's coding-agents plan, which is kept outside this repository.
 
 The template is derived from the public `engineering/code-architect` template by zvi-fried (MIT).
 The template's README lists what changed: the Tech lead's two passes, Scout rounds across turns,

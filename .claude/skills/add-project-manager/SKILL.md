@@ -9,7 +9,8 @@ The Project Manager is a NanoClaw agent that keeps the plan for one person's cod
 never builds: it owns a private workbench of state and design docs, turns an Architect agent's
 findings into agreed work items with acceptance criteria, runs a fixed-length iteration with one
 item in progress at a time, and can exchange a fixed form each iteration with the owner's Steward
-(life) agent. The design it implements is the owner's "Coding agents: target design" plan.
+(life) agent. The design it implements is the owner's coding-agents plan, which is kept outside
+this repository.
 
 This skill ships the agent as a template under `templates/engineering/project-manager/` and the
 test that holds the template to NanoClaw's plugin reader. Stamping, mounts, destinations, and

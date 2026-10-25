@@ -9,8 +9,8 @@ The Scout is the web half of a split: an agent that reads private repositories m
 the open web, so the Architect has no web access and asks the Scout instead. The Scout holds no
 code, no mounts, and no credentials beyond the model's. It answers numbered research questions
 with sources it found itself, confirms books by title against publisher pages, re-checks sources
-by id, and keeps a per-run source record. The design it implements is the owner's "Coding agents:
-target design" plan.
+by id, and keeps a per-run source record. The design it implements is the owner's coding-agents
+plan, which is kept outside this repository.
 
 This skill ships the agent as a template under `templates/engineering/scout/` and the test that
 holds the template to NanoClaw's plugin reader. Stamping, the gateway identity, and the
