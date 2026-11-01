@@ -10,15 +10,15 @@ Delete the self-registration import from `src/channels/index.ts` (skip if alread
 import './discord.js';
 ```
 
-Then delete the copied adapter and its registration test:
+Then delete the copied adapter and its tests:
 
 ```bash
-rm -f src/channels/discord.ts src/channels/discord-registration.test.ts
+rm -f src/channels/discord.ts src/channels/discord.test.ts src/channels/discord-registration.test.ts
 ```
 
 ## 2. Remove credentials
 
-Remove `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID`, and `DISCORD_PUBLIC_KEY` from `.env`.
+Remove `DISCORD_BOT_TOKEN`, `DISCORD_APPLICATION_ID`, and `DISCORD_PUBLIC_KEY` from `.env`, and, if you added a bot per agent group, `DISCORD_INSTANCES` and every `DISCORD_BOT_TOKEN_<NAME>`, `DISCORD_APPLICATION_ID_<NAME>` and `DISCORD_PUBLIC_KEY_<NAME>`.
 
 ## 3. Remove the package
 

@@ -15,15 +15,23 @@ safe to re-run; anything a parser can't apply falls back to the prose beside it.
 
 ## Apply
 
-### 1. Copy the adapter and its registration test
+### 1. Copy the adapter and its tests
 
-Fetch the `channels` branch and copy the Discord adapter and its registration
-test into `src/channels/` (overwrite — the branch is canonical):
+Fetch the `channels` branch and copy the Discord adapter and its tests into
+`src/channels/` (overwrite — the branch is canonical):
 
 ```nc:copy from-branch:channels
 src/channels/discord.ts
+src/channels/discord.test.ts
 src/channels/discord-registration.test.ts
 ```
+
+A fork that carries its own `channels` branch (for example, adapter changes not
+yet upstream) must copy from its own remote on every install path. Set
+`NANOCLAW_CHANNELS_REMOTE=origin` in the shell environment the skill runs in
+(the login profile, not `.env`, which these paths do not read); without it,
+setup's skill driver copies from the upstream remote and silently reverts the
+fork's adapter.
 
 ### 2. Register the adapter
 
@@ -144,6 +152,92 @@ server with you.
 
 If you're in the middle of `/setup`, return to the setup flow now. Otherwise wire
 this channel with `/init-first-agent` (or `/manage-channels`).
+
+## One bot per agent group (optional)
+
+By default one bot speaks for every agent, so in a room shared by several agents
+every reply arrives under the same name. To give each agent group its own name
+and picture, add a bot per agent. The bot set up above keeps the instance key
+`discord`, its `.env` keys and the owner's DM with it; cards that have no
+channel of origin still land there. Each further bot registers as
+`discord-<name>`, where `<name>` is a short lowercase label (letters, digits,
+dashes). Name it by role, for example `architect`, so the key outlives any
+renaming of the agent.
+
+For each further bot, in the Developer Portal:
+
+1. New Application. The application's **Name** is the bot's display name, its
+   **App Icon** is the bot's picture, and its **Description** is the bot's About
+   Me (190 characters at most).
+2. Bot tab → Reset Token and copy it (shown once); Privileged Gateway Intents →
+   enable Message Content Intent.
+3. Invite it with
+   `https://discord.com/oauth2/authorize?client_id=<application id>&scope=bot&permissions=311385230400`
+   to the same server, and add it to every channel its agent works in. The
+   permissions are the ones above plus View Channel, Create Public Threads and
+   Send Messages in Threads, since group replies go into threads.
+
+Derive the application id and public key from the token, exactly as above:
+`curl -sf https://discord.com/api/v10/oauth2/applications/@me -H "Authorization: Bot <token>"`
+gives `id` and `verify_key`. Then add the bot to `.env`, its name uppercased and
+dashes turned to underscores:
+
+```bash
+DISCORD_INSTANCES=architect,code-reviewer
+DISCORD_BOT_TOKEN_ARCHITECT=<token>
+DISCORD_APPLICATION_ID_ARCHITECT=<id>
+DISCORD_PUBLIC_KEY_ARCHITECT=<verify_key>
+```
+
+Restart (`bash setup/lib/restart.sh`). Each bot starts on its own: a bot missing a
+value is skipped with `Discord bot credentials incomplete, skipping` naming its
+instance, and a value Discord rejects logs `Failed to start channel adapter` for
+that instance only; the other bots run either way. `setup/verify.ts` reports each
+named bot as `configured` or `incomplete`.
+
+A room is reached through a bot by its own messaging-group row on that bot's
+instance, wired to that bot's agent. Rows, wirings and destinations do not move by
+themselves. Move one agent in one room at a time, a throwaway channel first, in
+this order:
+
+1. Answer any approval card still open for the room. An approved card replays its
+   message into the row it was raised on.
+2. Unwire the agent from the old row, and remove its destination for that row.
+   Agent-initiated sends and scheduled tasks go out through the agent's oldest
+   destination for a room, so a destination left behind keeps them on the old bot.
+   `ncl wirings list` and `ncl destinations list` give the ids and the local name.
+
+   ```bash
+   ncl wirings delete --id <wiring id>
+   ncl destinations remove --agent-group-id <agent group id> --local-name <local name>
+   ```
+
+3. Create the row on the new instance, as a group, named with the local name you
+   just freed, and wire the agent to it. The wiring names the agent's new
+   destination after the row, so prompts and tasks that name the room still reach
+   it.
+
+   ```bash
+   ncl messaging-groups create --channel-type discord --platform-id discord:<guildId>:<channelId> --instance discord-architect --is-group 1 --name <local name>
+   ncl wirings create --channel-type discord --platform-id discord:<guildId>:<channelId> --instance discord-architect --agent-group <folder>
+   ```
+
+4. Check that a message gets one reply, under the new bot's name, and that one of
+   the agent's scheduled tasks posts under it too.
+
+Leave the old row in place; it keeps the room's past sessions. In a room shared by
+several agents, the agent that stays on the default bot keeps its wiring on the
+default row and every other agent moves as above. If no agent is left on the
+default row, remove the default bot from the channel, or a mention of it asks the
+owner to register the room again. To move an agent back, run the same steps the
+other way: unwire it from the new row and remove that destination, then wire it to
+the old row again. The new row is then unwired, so a mention of the named bot in
+that room asks the owner to register the room again. That card is expected, not a
+fault; remove the named bot from the channel to stop it.
+
+The first time a new sender writes in a room on a named bot, the approval card
+arrives in the owner's DM with that bot. Posts by bots, the other agents' bots
+among them, are dropped before they reach any agent.
 
 ## Channel Info
 

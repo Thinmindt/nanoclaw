@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { determineVerifyStatus } from './verify.js';
+import { determineVerifyStatus, discordInstanceAuth, discordInstanceKeys } from './verify.js';
 
 const healthyBase = {
   service: 'running' as const,
@@ -69,5 +69,32 @@ describe('determineVerifyStatus', () => {
         credentials: 'missing',
       }),
     ).toBe('failed');
+  });
+});
+
+describe('named Discord bots (DISCORD_INSTANCES)', () => {
+  it('reads the three suffixed keys of every valid name, dashes to underscores', () => {
+    expect(discordInstanceKeys('architect, code-reviewer,Bad_Name')).toEqual([
+      'DISCORD_BOT_TOKEN_ARCHITECT',
+      'DISCORD_PUBLIC_KEY_ARCHITECT',
+      'DISCORD_APPLICATION_ID_ARCHITECT',
+      'DISCORD_BOT_TOKEN_CODE_REVIEWER',
+      'DISCORD_PUBLIC_KEY_CODE_REVIEWER',
+      'DISCORD_APPLICATION_ID_CODE_REVIEWER',
+    ]);
+    expect(discordInstanceKeys(undefined)).toEqual([]);
+  });
+
+  it('reports each bot as configured, incomplete, or not at all', () => {
+    const set = new Set([
+      'DISCORD_BOT_TOKEN_ARCHITECT',
+      'DISCORD_PUBLIC_KEY_ARCHITECT',
+      'DISCORD_APPLICATION_ID_ARCHITECT',
+      'DISCORD_BOT_TOKEN_STEWARD',
+    ]);
+    expect(discordInstanceAuth('architect,steward,scout', (key) => set.has(key))).toEqual({
+      'discord-architect': 'configured',
+      'discord-steward': 'incomplete',
+    });
   });
 });
