@@ -2,7 +2,8 @@ import { createDiscordAdapter } from '@chat-adapter/discord';
 import type { Message } from 'chat';
 import { describe, expect, it } from 'vitest';
 
-import { checkApplicationRecord, unwrapForwardedSnapshot, unwrapForwards } from './discord.js';
+import type { ChannelSetup, InboundMessage } from './adapter.js';
+import { checkApplicationRecord, dropBotPosts, unwrapForwardedSnapshot, unwrapForwards } from './discord.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function forwardPayload(snapshotMessage: Record<string, any> | null, overrides: Record<string, any> = {}) {
@@ -111,6 +112,43 @@ describe('checkApplicationRecord', () => {
 
   it.each([429, 500, 503])('lets the bot start unchecked on a %i, never failing it on an outage', (status) => {
     expect(checkApplicationRecord(status, null, expected)).toEqual({ ok: true, checked: false });
+  });
+});
+
+describe('dropBotPosts', () => {
+  function post(isBot: boolean): InboundMessage {
+    return {
+      id: 'm1',
+      kind: 'chat-sdk',
+      content: { text: 'hello', author: { userId: 'u1', userName: 'someone', isBot, isMe: false } },
+      timestamp: '2026-01-01T00:00:00.000Z',
+    };
+  }
+
+  function wrapped(): { setup: ChannelSetup; routed: InboundMessage[] } {
+    const routed: InboundMessage[] = [];
+    const host: ChannelSetup = {
+      onInbound: (_platformId, _threadId, message) => {
+        routed.push(message);
+      },
+      onInboundEvent: () => {},
+      onMetadata: () => {},
+      onAction: () => {},
+    };
+    return { setup: dropBotPosts(host, 'discord-architect'), routed };
+  }
+
+  it("drops a bot's post before the router", async () => {
+    const { setup, routed } = wrapped();
+    await setup.onInbound('discord:g1:c1', null, post(true));
+    expect(routed).toEqual([]);
+  });
+
+  it("passes a person's post through unchanged", async () => {
+    const { setup, routed } = wrapped();
+    const message = post(false);
+    await setup.onInbound('discord:g1:c1', null, message);
+    expect(routed).toEqual([message]);
   });
 });
 
