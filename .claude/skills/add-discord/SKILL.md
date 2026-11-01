@@ -15,15 +15,24 @@ safe to re-run; anything a parser can't apply falls back to the prose beside it.
 
 ## Apply
 
-### 1. Copy the adapter and its registration test
+### 1. Copy the adapter and its tests
 
-Fetch the `channels` branch and copy the Discord adapter and its registration
-test into `src/channels/` (overwrite — the branch is canonical):
+Fetch the `channels` branch and copy the Discord adapter, its registration
+test and its sibling-bot gate test into `src/channels/` (overwrite — the
+branch is canonical):
 
 ```nc:copy from-branch:channels
 src/channels/discord.ts
 src/channels/discord-registration.test.ts
+src/channels/discord-sibling-bot-gate.test.ts
 ```
+
+A fork that carries its own `channels` branch (for example, adapter changes not
+yet upstream) must copy from its own remote on every install path. Set
+`NANOCLAW_CHANNELS_REMOTE=origin` in the shell environment the skill runs in
+(the login profile, not `.env`, which these paths do not read); without it,
+setup's skill driver copies from the upstream remote and silently reverts the
+fork's adapter.
 
 ### 2. Register the adapter
 
@@ -144,6 +153,65 @@ server with you.
 
 If you're in the middle of `/setup`, return to the setup flow now. Otherwise wire
 this channel with `/init-first-agent` (or `/manage-channels`).
+
+## One bot per agent group (optional)
+
+By default one bot speaks for every agent, so in a room shared by several agents
+every reply arrives under the same name. To give each agent group its own name
+and picture, add a bot per agent. The bot set up above keeps the instance key
+`discord`, its `.env` keys and the owner's DM with it; cards that have no
+channel of origin still land there. Each further bot registers as
+`discord-<name>`, where `<name>` is a short lowercase label (letters, digits,
+dashes). Name it by role, for example `architect`, so the key outlives any
+renaming of the agent.
+
+For each further bot, in the Developer Portal:
+
+1. New Application. The application's **Name** is the bot's display name, its
+   **App Icon** is the bot's picture, and its **Description** is the bot's About
+   Me (190 characters at most).
+2. Bot tab → Reset Token and copy it (shown once); Privileged Gateway Intents →
+   enable Message Content Intent.
+3. Invite it with
+   `https://discord.com/oauth2/authorize?client_id=<application id>&scope=bot&permissions=2147584064`
+   to the same server, and add it to every channel its agent works in.
+
+Derive the application id and public key from the token, exactly as above:
+`curl -sf https://discord.com/api/v10/oauth2/applications/@me -H "Authorization: Bot <token>"`
+gives `id` and `verify_key`. Then add the bot to `.env`, its name uppercased and
+dashes turned to underscores:
+
+```bash
+DISCORD_INSTANCES=architect,code-reviewer
+DISCORD_BOT_TOKEN_ARCHITECT=<token>
+DISCORD_APPLICATION_ID_ARCHITECT=<id>
+DISCORD_PUBLIC_KEY_ARCHITECT=<verify_key>
+```
+
+Restart (`bash setup/lib/restart.sh`). Each bot starts on its own: a bot missing a
+value is skipped with `Discord bot credentials incomplete, skipping` naming its
+instance, and a value Discord rejects logs `Failed to start channel adapter` for
+that instance only; the other bots run either way. `setup/verify.ts` reports each
+named bot as `configured` or `incomplete`.
+
+A room is then reached through a bot by its own messaging-group row on that bot's
+instance, wired to that bot's agent. Rows and sessions do not move by themselves:
+
+```bash
+ncl messaging-groups create --channel-type discord --platform-id discord:<guildId>:<channelId> --instance discord-architect --name <room>
+ncl wirings create --channel-type discord --platform-id discord:<guildId>:<channelId> --instance discord-architect --agent-group <folder>
+```
+
+Move one room at a time, a throwaway channel first: create the new row and wiring,
+check that one message gets a reply under the new bot's name, then retire the old
+row for that room. In a room shared by several agents, add one row per bot beside
+the default row, each wired to its own agent. The first time a new sender writes in
+a room on a named bot, the approval card arrives in the owner's DM with that bot.
+
+The bots also see each other's posts. A sibling bot is an unapproved sender under
+the default `request_approval` policy, so its posts are held at the sender gate and
+do not wake another agent; leave those approval cards unanswered unless you mean an
+agent to read another's posts.
 
 ## Channel Info
 
