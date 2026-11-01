@@ -29,7 +29,7 @@ import {
   validate,
 } from './skill-directives.js';
 import { gitFetchBranchCommand } from './git-fetch-branch.js';
-import { detectInstalledSkills, refreshInstalledSkills, resolveRegistryRemote } from './update-skills.js';
+import { refreshInstalledSkills, resolveRegistryRemote } from './update-skills.js';
 import { verifyProviderContracts } from './provider-contract-verifier.js';
 import { parseProviderDescriptor } from '../setup/providers/skill-descriptor.js';
 
@@ -404,18 +404,14 @@ async function testCombinedProviders(skills: RegistrySkill[]): Promise<void> {
     git(['update-ref', 'refs/heads/providers', refs.providers], root);
     git(['remote', 'remove', 'origin'], root);
     git(['remote', 'add', 'skill-ci', '.'], root);
-    // Trunk may carry an applied channel skill; only providers are under test,
-    // and this clone has no channels registry to refresh one from.
     const expected = selected.map(({ provider }) => provider).sort();
-    const detected = detectInstalledSkills(root)
-      .filter(({ kind }) => kind === 'provider')
-      .map(({ name }) => name);
-    if (JSON.stringify(detected) !== JSON.stringify(expected)) {
-      throw new Error(`update-skills detected ${detected.join(', ') || 'no providers'}`);
-    }
+    // By name, not 'all': trunk may carry an applied channel, and this clone has no channels registry.
     const report = await refreshInstalledSkills(root, expected, {
       exec: (cmd, cwd) => command(cmd, cwd),
     });
+    if (JSON.stringify(report.selected) !== JSON.stringify(expected)) {
+      throw new Error(`update-skills detected ${report.selected.join(', ') || 'no providers'}`);
+    }
     if (!report.success) {
       throw new Error(`update-skills refresh failed: ${JSON.stringify(report)}`);
     }
