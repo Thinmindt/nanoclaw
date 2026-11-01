@@ -2,7 +2,7 @@ import { createDiscordAdapter } from '@chat-adapter/discord';
 import type { Message } from 'chat';
 import { describe, expect, it } from 'vitest';
 
-import { unwrapForwardedSnapshot, unwrapForwards } from './discord.js';
+import { checkApplicationRecord, unwrapForwardedSnapshot, unwrapForwards } from './discord.js';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function forwardPayload(snapshotMessage: Record<string, any> | null, overrides: Record<string, any> = {}) {
@@ -75,6 +75,42 @@ describe('unwrapForwardedSnapshot', () => {
     });
     unwrapForwardedSnapshot(data);
     expect(data.content).toBe('[Forwarded message]\none\ntwo');
+  });
+});
+
+describe('checkApplicationRecord', () => {
+  const expected = { applicationId: '100', publicKey: 'a'.repeat(64) };
+
+  it('passes when the record carries the configured id and key', () => {
+    expect(checkApplicationRecord(200, { id: '100', verify_key: 'a'.repeat(64) }, expected)).toEqual({
+      ok: true,
+      checked: true,
+    });
+  });
+
+  it('fails a token Discord rejects', () => {
+    expect(checkApplicationRecord(401, null, expected)).toEqual({
+      ok: false,
+      reason: 'Discord rejected the bot token (401)',
+    });
+  });
+
+  it("fails an application id that is not the token's application", () => {
+    expect(checkApplicationRecord(200, { id: '999', verify_key: 'a'.repeat(64) }, expected)).toMatchObject({
+      ok: false,
+      reason: "application id does not match the token's application",
+    });
+  });
+
+  it("fails a public key that is not the token's application's", () => {
+    expect(checkApplicationRecord(200, { id: '100', verify_key: 'b'.repeat(64) }, expected)).toMatchObject({
+      ok: false,
+      reason: "public key does not match the token's application",
+    });
+  });
+
+  it.each([429, 500, 503])('lets the bot start unchecked on a %i, never failing it on an outage', (status) => {
+    expect(checkApplicationRecord(status, null, expected)).toEqual({ ok: true, checked: false });
   });
 });
 
