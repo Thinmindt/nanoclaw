@@ -17,7 +17,7 @@ import { createDiscordAdapter } from '@chat-adapter/discord';
 import { readEnvFile } from '../env.js';
 import { log } from '../log.js';
 import type { ChannelAdapter, ChannelDefaults, ChannelSetup } from './adapter.js';
-import { createChatSdkBridge, type ReplyContext } from './chat-sdk-bridge.js';
+import { createChatSdkBridge, registerBridgeInboundPolicy, type ReplyContext } from './chat-sdk-bridge.js';
 import { registerChannelAdapter } from './channel-registry.js';
 
 /**
@@ -82,6 +82,28 @@ export function unwrapForwards(adapter: ReturnType<typeof createDiscordAdapter>)
     return orig(data, options);
   };
 }
+
+/**
+ * Posts by bots, the install's other Discord bots among them, never reach the
+ * router. The adapter drops them on its own gateway path, but the bridge
+ * forwards gateway events past that check, so the drop is made here, on every
+ * Discord bridge through the bridge's inbound-policy hook.
+ */
+export function dropBotPosts(setup: ChannelSetup, instanceKey: string): ChannelSetup {
+  return {
+    ...setup,
+    onInbound(platformId, threadId, message) {
+      const content = message.content as { author?: { isBot?: unknown } } | null;
+      if (content?.author?.isBot === true) {
+        log.debug('Discord post by a bot dropped', { instance: instanceKey, platformId });
+        return;
+      }
+      return setup.onInbound(platformId, threadId, message);
+    },
+  };
+}
+
+registerBridgeInboundPolicy('discord', dropBotPosts);
 
 /** The three values one bot needs, as configured. */
 export interface DiscordCredentials {
