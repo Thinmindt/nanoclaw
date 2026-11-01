@@ -137,11 +137,13 @@ export async function run(_args: string[]): Promise<void> {
   }
 
   // 4. Check channel auth (detect configured channels by credentials)
+  const discordInstances = readEnvFile(['DISCORD_INSTANCES']).DISCORD_INSTANCES ?? process.env.DISCORD_INSTANCES;
   const envVars = readEnvFile([
     'TELEGRAM_BOT_TOKEN',
     'SLACK_BOT_TOKEN',
     'SLACK_APP_TOKEN',
     'DISCORD_BOT_TOKEN',
+    ...discordInstanceKeys(discordInstances),
     'GITHUB_TOKEN',
     'LINEAR_API_KEY',
     'GCHAT_CREDENTIALS',
@@ -167,6 +169,7 @@ export async function run(_args: string[]): Promise<void> {
 
   // Token-based channels
   if (has('DISCORD_BOT_TOKEN')) channelAuth.discord = 'configured';
+  Object.assign(channelAuth, discordInstanceAuth(discordInstances, has));
   if (has('TELEGRAM_BOT_TOKEN')) channelAuth.telegram = 'configured';
   if (has('SLACK_BOT_TOKEN') && has('SLACK_APP_TOKEN')) channelAuth.slack = 'configured';
   if (has('GITHUB_TOKEN')) channelAuth.github = 'configured';
@@ -183,7 +186,7 @@ export async function run(_args: string[]): Promise<void> {
     channelAuth.imessage = 'configured';
   }
 
-  const configuredChannels = Object.keys(channelAuth);
+  const configuredChannels = Object.keys(channelAuth).filter((c) => channelAuth[c] !== 'incomplete');
 
   // 5. Check registered groups in v2 central DB (agent_groups + messaging_group_agents),
   //    plus how many agent groups pin an image of their own (reported in step 7).
@@ -277,6 +280,44 @@ export async function run(_args: string[]): Promise<void> {
   });
 
   if (status === 'failed') process.exit(1);
+}
+
+/** Valid DISCORD_INSTANCES names, the same rule src/channels/discord.ts registers by. */
+function discordInstanceNames(instances: string | undefined): string[] {
+  return (instances ?? '')
+    .split(',')
+    .map((n) => n.trim())
+    .filter((n) => /^[a-z0-9][a-z0-9-]*$/.test(n));
+}
+
+/** One named bot's credential keys: name uppercased, dashes → underscores. */
+function discordInstanceKeySet(name: string): string[] {
+  const suffix = name.toUpperCase().replace(/-/g, '_');
+  return [`DISCORD_BOT_TOKEN_${suffix}`, `DISCORD_PUBLIC_KEY_${suffix}`, `DISCORD_APPLICATION_ID_${suffix}`];
+}
+
+/** The three suffixed credential keys of every named Discord bot. */
+export function discordInstanceKeys(instances: string | undefined): string[] {
+  return discordInstanceNames(instances).flatMap(discordInstanceKeySet);
+}
+
+/**
+ * One channelAuth entry per named Discord bot, keyed by its instance
+ * (`discord-<name>`): 'configured' when its token, public key and application
+ * id are all set, 'incomplete' when only some are (the adapter skips that bot
+ * at boot), and no entry when none are.
+ */
+export function discordInstanceAuth(
+  instances: string | undefined,
+  has: (key: string) => boolean,
+): Record<string, 'configured' | 'incomplete'> {
+  const auth: Record<string, 'configured' | 'incomplete'> = {};
+  for (const name of discordInstanceNames(instances)) {
+    const set = discordInstanceKeySet(name).filter(has).length;
+    if (set === 3) auth[`discord-${name}`] = 'configured';
+    else if (set > 0) auth[`discord-${name}`] = 'incomplete';
+  }
+  return auth;
 }
 
 /**
