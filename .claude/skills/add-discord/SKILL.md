@@ -231,7 +231,9 @@ default row and every other agent moves as above. If no agent is left on the
 default row, remove the default bot from the channel, or a mention of it asks the
 owner to register the room again. To move an agent back, run the same steps the
 other way: unwire it from the new row and remove that destination, then wire it to
-the old row again.
+the old row again. The new row is then unwired, so a mention of the named bot in
+that room asks the owner to register the room again. That card is expected, not a
+fault; remove the named bot from the channel to stop it.
 
 The first time a new sender writes in a room on a named bot, the approval card
 arrives in the owner's DM with that bot. Posts by bots, the other agents' bots
