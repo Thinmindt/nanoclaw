@@ -175,7 +175,8 @@ systemctl --user restart $(systemd_unit)                 # Linux
 
 Then, from the Architect's channel, ask it to send the Scout a question containing a link. The
 Architect should report that the message was refused; `ncl sessions list` shows no new Scout
-activity, and `logs/nanoclaw.log` carries the `a2a-gate: message to scout refused` line. Then
+activity, and `logs/nanoclaw.log` carries a `Delivery action denied by guard` line whose reason
+begins `a2a-gate: message to scout refused`. Then
 ask it a clean question; approve the two cards (question out, answer back), and the Architect's
 report of the answer should quote the gate's header line, `[gate: answer from Scout, plain
 text, ...]`.
