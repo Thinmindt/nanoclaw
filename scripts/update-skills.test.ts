@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { detectInstalledSkills, refreshInstalledSkills } from './update-skills.js';
 
@@ -35,6 +35,7 @@ function commit(root: string, message: string): void {
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const root of tempRoots.splice(0)) fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -80,6 +81,9 @@ describe('registry refresh end to end', () => {
   });
 
   it('refreshes from official upstream when the user fork origin has no registry branch', async () => {
+    // The test pins the automatic remote choice; a fork's shell may export the override.
+    vi.stubEnv('NANOCLAW_REGISTRY_REMOTE', '');
+    vi.stubEnv('NANOCLAW_CHANNELS_REMOTE', '');
     const seed = temp('nanoclaw-skills-seed-');
     run(seed, 'git', ['init', '-b', 'main']);
     write(seed, 'src/channels/index.ts', "import './cli.js';\n");

@@ -198,6 +198,8 @@ describe('provisioning-core bootstrap', () => {
   });
 
   it('module absent: fetches the channels branch and materializes the one file, engine-style', async () => {
+    // The test pins the automatic remote choice; a fork's shell may export the override.
+    vi.stubEnv('NANOCLAW_CHANNELS_REMOTE', '');
     const root = track(fs.mkdtempSync(path.join(os.tmpdir(), 'slack-auto-')));
     const exec = vi.fn((command: string): string => {
       if (command === 'git remote') return 'upstream\norigin\n';
