@@ -27,17 +27,16 @@ One messaging-group row per room and bot, each wired to its own agent. Nothing n
 
 ## Sibling bots in one room
 
-With several bots in a shared room, each bot also receives the others' posts. This change leaves them where the Discord defaults put them: an unapproved sender, held at the sender gate (`DISCORD_DEFAULTS` in `src/channels/discord.ts`, `request_approval`). One test covers it: a bot-authored inbound on one instance is held, not engaged. Letting agents read each other is a later change with its own page.
+With several bots in a shared room, each bot also receives the others' posts. The adapter drops bot-authored posts on its own gateway path, but the bridge forwards gateway events past that check, so they would reach the router as unknown senders: one approval card per bot and agent, and approving one admits that bot to the whole agent group (`src/modules/permissions/index.ts:299-304`). This change drops every bot-authored Discord post before the router, through the bridge's inbound-policy hook (`dropBotPosts` in `src/channels/discord.ts`). Letting agents read each other is a later change with its own page: an admission policy in front of this drop.
 
 ## Cutover
 
-Rows and sessions do not move by themselves. Moving a room to a named bot is a new row, a new wiring and a new session; the old row is retired by hand. Order:
+Rows, wirings and destinations do not move by themselves. Moving an agent in a room to a named bot is: answer the room's open approval cards; unwire the agent from the old row and remove its destination for that row (agent-initiated sends and scheduled tasks resolve the agent's oldest destination for a room, `src/db/messaging-groups.ts:95-112`, so one left behind keeps them on the old bot); create the new row with `--is-group 1` (the CLI defaults to a DM) under the freed local name, and wire it. The old row stays, unwired, because its sessions reference it. The reverse is the same steps the other way. The add-discord skill carries the commands. Order:
 
-1. Throwaway channel first: two bots, one message each, under their own names.
+1. Throwaway channel first: two bots, one message each, under their own names, and back again.
 2. Then one agent's room at a time. Rooms and the owner's DM that belong to the agent kept on the default instance do not move.
-3. The shared room last: one new row per non-default bot, each wired to its agent, beside the existing default row. Each bot invited to the server and the channel.
-4. Pending approvals on moved rooms re-raised on the new instance; old rows retired.
-5. Each agent's scheduled tasks post through its own bot after the move (one check per agent).
+3. The shared room last: every agent but the default bot's moves as above; the default bot's agent keeps its wiring on the existing row. Each bot invited to the server and the channel.
+4. Each agent's scheduled tasks post through its own bot after the move (one check per agent).
 
 The install's own order, with its room names and dates, is kept in the install's records, not here.
 
@@ -46,9 +45,9 @@ The install's own order, with its room names and dates, is kept in the install's
 In two places, the way upstream's maintenance doc divides the tree (docs/BRANCH-FORK-MAINTENANCE.md): adapter code on the `channels` registry branch, skill definitions and setup code on `main`.
 
 - **`channels`:** `discord.ts` and its tests. Fixes to existing adapters land as pull requests based on the registry branch, and the add-discord skill copies these files from there into a clone, overwriting what is there.
-- **`main`:** the add-discord skill (the copy list, which now includes the sibling-bot gate test, and the setup section), `setup/verify.ts`, and this page. With them, the applied result: add-discord re-run on `main`, which copies the new adapter and tests in.
+- **`main`:** the add-discord skill (the copy list, which now includes `discord.test.ts`, and the setup section), `setup/verify.ts`, and this page. With them, the applied result: add-discord re-run on `main`, which copies the new adapter and tests in.
 
-`channels` merges first. Main's skill lists a file only the new `channels` carries, and both the skill install and the registry-skills check fail until it is there.
+`channels` merges first, so that the adapter `main` carries is the one its `channels` carries, and a re-run of the skill changes nothing.
 
 A fork that carries its own `channels` must have every install path copy from it. Setup's skill driver resolves the remote whose URL is the upstream repository (`setup/lib/channels-remote.sh`), while the skill engine and `/update-skills` prefer `origin` when it carries the branch; `NANOCLAW_CHANNELS_REMOTE=origin`, set in the shell environment (these paths read the process environment, not `.env`), makes them all copy from the fork. Without it, a setup-driven reinstall would put upstream's adapter back.
 
@@ -60,4 +59,4 @@ Adding a bot per agent becomes a documented step: the Developer Portal work for 
 
 ## Gates
 
-`pnpm test`, `pnpm typecheck`, `pnpm lint`; the registration test and the sender-gate test above; the Architect's review of the diff before merge.
+`pnpm test`, `pnpm typecheck`, and `pnpm lint` with no new errors (both branches carry lint errors from upstream, and upstream's CI runs no lint); the registration test and the bot-post drop tests; the Architect's review of the diff before merge.
