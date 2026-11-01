@@ -13,7 +13,7 @@ import './discord.js';
 Then delete the copied adapter and its tests:
 
 ```bash
-rm -f src/channels/discord.ts src/channels/discord-registration.test.ts src/channels/discord-sibling-bot-gate.test.ts
+rm -f src/channels/discord.ts src/channels/discord.test.ts src/channels/discord-registration.test.ts
 ```
 
 ## 2. Remove credentials
