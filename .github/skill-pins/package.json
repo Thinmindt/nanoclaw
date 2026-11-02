@@ -153,7 +153,8 @@
     "@openai/codex": {
       "version": "0.162.1",
       "sources": [
-        ".claude/skills/add-codex/SKILL.md nc:json-merge"
+        ".claude/skills/add-codex/SKILL.md nc:json-merge",
+        "container/cli-tools.json"
       ]
     },
     "@opencode-ai/sdk": {
