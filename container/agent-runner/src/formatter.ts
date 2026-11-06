@@ -321,7 +321,9 @@ function formatTaskMessage(msg: MessageInRow): string {
   });
   const parts: string[] = [];
   if (content.scriptOutput) {
-    parts.push('Script output:', JSON.stringify(content.scriptOutput, null, 2), '');
+    // Its own element, escaped, so what an API returned cannot pose as the
+    // instructions below it. The legend in destinations.ts names the element.
+    parts.push('<script-output>', escapeXmlText(JSON.stringify(content.scriptOutput, null, 2)), '</script-output>', '');
   }
   parts.push('Instructions:', stripLegacyTaskContract(content.prompt || ''));
   return `<task${from} time="${escapeXml(time)}" current_time="${escapeXml(currentTime)}">${parts.join('\n')}</task>`;
@@ -353,7 +355,8 @@ function formatWebhookMessage(msg: MessageInRow): string {
   const source = content.source || 'unknown';
   const event = content.event || 'unknown';
   const from = originAttr(msg);
-  return `<webhook${from} source="${escapeXml(source)}" event="${escapeXml(event)}">${JSON.stringify(content.payload || content, null, 2)}</webhook>`;
+  // The payload is escaped so it cannot close the element; see formatTaskMessage.
+  return `<webhook${from} source="${escapeXml(source)}" event="${escapeXml(event)}">${escapeXmlText(JSON.stringify(content.payload || content, null, 2))}</webhook>`;
 }
 
 function formatSystemMessage(msg: MessageInRow): string {
@@ -438,6 +441,11 @@ function parseContent(json: string): any {
 
 function escapeXml(str: string): string {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Element text only: quotes stay as they are, so JSON inside reads as JSON. */
+function escapeXmlText(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
