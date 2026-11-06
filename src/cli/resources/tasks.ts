@@ -483,7 +483,6 @@ registerResource({
         `  DO: print the JSON as the very last line, exit 0, keep data small (a summary, not a dump).\n` +
         `  DON'T: print anything after the JSON, prompt for input, or rely on state from previous runs.\n` +
         `  Always test with bash -c '<script>' before scheduling.\n` +
-        `  It gets only PATH, HOME, TZ and the gateway's proxy and CA settings; set anything else in the script itself.\n` +
         `  Persist state between fires under the group workspace (e.g. a last-seen id file).\n` +
         `  Use good judgement on whether to share with the user the script (only if they are technical), a description of the script condition, or whether there's no need.\n\n` +
         `Frequency limit: recurrences more frequent than ${MAX_DAILY_FIRES} fires/day are refused unless the task\n` +

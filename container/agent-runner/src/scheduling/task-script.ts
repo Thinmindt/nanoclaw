@@ -14,36 +14,6 @@ const SCRIPT_KILL_GRACE_MS = 2_000;
 // SIGKILL is not synchronous; wait this long for the group to vanish before moving on.
 const SCRIPT_KILL_REAP_MS = 1_000;
 
-/**
- * The only variables a pre-task script gets, since its output lands in the prompt:
- * the shell basics and the gateway's proxy and CA settings, as an agent container
- * sets them. Everything else in the container's environment is left out.
- */
-const SCRIPT_ENV_NAMES = [
-  'PATH',
-  'HOME',
-  'TZ',
-  'HTTP_PROXY',
-  'HTTPS_PROXY',
-  'http_proxy',
-  'https_proxy',
-  'NODE_USE_ENV_PROXY',
-  'NODE_EXTRA_CA_CERTS',
-  'SSL_CERT_FILE',
-  'DENO_CERT',
-  'GIT_HTTP_PROXY_AUTHMETHOD',
-  'GIT_TERMINAL_PROMPT',
-];
-
-function scriptEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
-  const kept: Record<string, string> = {};
-  for (const name of SCRIPT_ENV_NAMES) {
-    const value = env[name];
-    if (value !== undefined) kept[name] = value;
-  }
-  return kept;
-}
-
 export interface ScriptResult {
   wakeAgent: boolean;
   data?: unknown;
@@ -65,11 +35,7 @@ export async function runScript(
     // Bash forks the last command of a script file instead of exec'ing it, so
     // killing bash alone orphans that child and its side effects still land.
     // Run the script in its own process group and kill the whole group.
-    const child = spawn('bash', [scriptPath], {
-      detached: true,
-      env: scriptEnvironment(process.env),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = spawn('bash', [scriptPath], { detached: true, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
 
     const out = { stdout: [] as Buffer[], stderr: [] as Buffer[] };
     const bytes = { stdout: 0, stderr: 0 };

@@ -77,16 +77,6 @@ describe('script-skip ack chain (container leg)', () => {
   });
 });
 
-it('runs a gate script with only the listed variables', async () => {
-  process.env.GATE_TEST_UNLISTED = 'leaked';
-  try {
-    const script = 'printf \'{"wakeAgent":true,"data":"%s %s"}\\n\' "${GATE_TEST_UNLISTED:-unset}" "${PATH:+path}"';
-    expect((await runScript(script, 't-env'))?.data).toBe('unset path');
-  } finally {
-    delete process.env.GATE_TEST_UNLISTED;
-  }
-});
-
 describe('a timed-out script is reported as a timeout', () => {
   /**
    * execFile kills on timeout, so the callback receives a generic
