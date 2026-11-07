@@ -285,8 +285,7 @@ describe('Codex thread SessionStart source', () => {
 // With the nanoclaw server required, Codex fails thread/start and thread/resume
 // when it cannot start. The resume failure must surface as an error, not be
 // read as a stale thread: that would start a new thread and silently drop the
-// conversation. Error strings are verbatim from codex 0.155.1, the pinned
-// version (0.146.0 words the failure without the repeated tail).
+// conversation. Error strings are verbatim from codex 0.162.1, the pinned version.
 describe('Codex thread resume failures', () => {
   const REQUIRED_MCP_FAILURE =
     'error resuming thread: Fatal error: Failed to initialize session: required MCP servers failed to initialize: ' +
@@ -294,7 +293,7 @@ describe('Codex thread resume failures', () => {
     'connection closed: initialize response';
   const REQUIRED_MCP_TIMEOUT =
     'error resuming thread: Fatal error: Failed to initialize session: required MCP servers failed to initialize: ' +
-    'nanoclaw: timed out handshaking with MCP server after 29.99999975s';
+    'nanoclaw: timed out handshaking with MCP server after 29.999999658s';
   const STALE_THREAD = 'no rollout found for thread id 01a0caf8-0000-7000-a000-000000000000';
 
   for (const [label, message] of [
