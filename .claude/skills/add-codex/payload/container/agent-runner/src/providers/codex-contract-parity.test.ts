@@ -32,34 +32,16 @@ const HOOK: CodexMemorySessionHook = {
   sources: ['startup', 'clear', 'compact'],
 };
 
-const EXISTING_HOOKS_JSON = JSON.stringify(
-  {
-    hooks: {
-      Stop: [{ hooks: [{ type: 'command', command: 'custom-stop' }] }],
-      SessionStart: [{ matcher: 'resume', hooks: [{ type: 'command', command: 'custom-resume' }] }],
-    },
-  },
-  null,
-  2,
-);
-
-function seedHome(): string {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-parity-'));
-  const codexDir = path.join(home, '.codex');
-  fs.mkdirSync(codexDir, { recursive: true });
-  fs.writeFileSync(path.join(codexDir, 'hooks.json'), EXISTING_HOOKS_JSON);
-  return home;
+function tempHome(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'codex-parity-'));
 }
 
-function readCodexFiles(home: string): { configToml: string; hooksJson: string } {
-  return {
-    configToml: fs.readFileSync(path.join(home, '.codex', 'config.toml'), 'utf-8'),
-    hooksJson: fs.readFileSync(path.join(home, '.codex', 'hooks.json'), 'utf-8'),
-  };
+function readConfigToml(home: string): string {
+  return fs.readFileSync(path.join(home, '.codex', 'config.toml'), 'utf-8');
 }
 
 (hasContractCore ? describe : describe.skip)('codex contract write-path parity', () => {
-  it('produces byte-identical config.toml and hooks.json through the contract path and the legacy writer', async () => {
+  it('produces byte-identical config.toml through the contract path and the legacy writer', async () => {
     // Two-step registration: the providers barrel registers the factory, the
     // contracts barrel attaches the contract whose beforeQuery writes the files.
     await import('./index.js');
@@ -69,14 +51,14 @@ function readCodexFiles(home: string): { configToml: string; hooksJson: string }
       await import('../provider-contracts/realize.js');
 
     const previousHome = process.env.HOME;
-    const legacyHome = seedHome();
-    const contractHome = seedHome();
+    const legacyHome = tempHome();
+    const contractHome = tempHome();
     try {
       // Legacy path: the provider normalizes effort in its constructor, then
       // hands the direct writer the normalized value.
       process.env.HOME = legacyHome;
-      writeCodexConfigToml(SERVERS, HOOK, { model: 'gpt-5', effort: 'high' });
-      const legacy = readCodexFiles(legacyHome);
+      writeCodexConfigToml(SERVERS, { model: 'gpt-5', effort: 'high' });
+      const legacy = readConfigToml(legacyHome);
 
       // Contract path: core hands the raw construction inputs to the provider
       // lifecycle callback (effort arrives un-normalized).
@@ -92,10 +74,9 @@ function readCodexFiles(home: string): { configToml: string; hooksJson: string }
         memory: HOOK,
         mcpServers: SERVERS,
       });
-      const contract = readCodexFiles(contractHome);
+      const contract = readConfigToml(contractHome);
 
-      expect(contract.configToml).toBe(legacy.configToml);
-      expect(contract.hooksJson).toBe(legacy.hooksJson);
+      expect(contract).toBe(legacy);
     } finally {
       if (previousHome === undefined) delete process.env.HOME;
       else process.env.HOME = previousHome;
@@ -104,14 +85,14 @@ function readCodexFiles(home: string): { configToml: string; hooksJson: string }
     }
   });
 
-  it('writes config.toml and hooks.json exactly once per query through the factory-wrapped provider', async () => {
+  it('writes config.toml exactly once per query through the factory-wrapped provider', async () => {
     await import('./index.js');
     await import('../provider-contracts/index.js');
     const { createProvider } = await import('./factory.js');
     const { registerProviderMemorySessionHook } = await import('../provider-contracts/realize.js');
 
     const previousHome = process.env.HOME;
-    const home = seedHome();
+    const home = tempHome();
     // The contract's beforeQuery writes through the real writer; the
     // provider's own direct write goes through its runtime deps. Count the
     // real file writes and the deps writer separately, and keep the query
@@ -145,9 +126,8 @@ function readCodexFiles(home: string): { configToml: string; hooksJson: string }
 
       const written = writeSpy.mock.calls.map((call) => path.basename(String(call[0])));
       expect(written.filter((name) => name === 'config.toml')).toHaveLength(1);
-      expect(written.filter((name) => name === 'hooks.json')).toHaveLength(1);
       expect(legacyWrites).toBe(0);
-      expect(readCodexFiles(home).configToml).toContain('model = "gpt-5"');
+      expect(readConfigToml(home)).toContain('model = "gpt-5"');
     } finally {
       writeSpy.mockRestore();
       Object.assign(defaultCodexRuntimeDeps, originalDeps);

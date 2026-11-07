@@ -33,6 +33,7 @@ Check whether the payload is already wired (a prior apply, or a trunk that still
 - `setup/providers/codex.ts` and both `provider-contracts/codex.ts` declarations (host and container)
 - `import './codex.js';` in the three provider barrels and both contract barrels
 - an `@openai/codex` entry in `container/cli-tools.json`
+- the `/etc/codex/hooks.json` line in `container/Dockerfile`
 
 ### 1. Fetch and copy the payload
 
@@ -57,9 +58,13 @@ container/AGENTS.md
 ### Carried runtime files
 
 These runtime files carry this fork's changes to the registry copy, so they come from this payload,
-not the `providers` branch, and a refresh keeps them.
+not the `providers` branch, and a refresh keeps them. The change: Codex runs without
+`--dangerously-bypass-hook-trust`, so it runs only managed hooks. The one managed hook is the memory
+hook in `codex-hooks.json`, which the image installs root-owned at `/etc/codex/hooks.json` (step 3).
+A hook the agent writes in its Codex home or its workspace stays untrusted and never runs.
 
 ```nc:copy
+payload/container/agent-runner/src/providers/codex-hooks.json -> container/agent-runner/src/providers/codex-hooks.json
 payload/container/agent-runner/src/providers/codex.ts -> container/agent-runner/src/providers/codex.ts
 payload/container/agent-runner/src/providers/codex-app-server.ts -> container/agent-runner/src/providers/codex-app-server.ts
 payload/container/agent-runner/src/providers/codex.factory.test.ts -> container/agent-runner/src/providers/codex.factory.test.ts
@@ -116,6 +121,13 @@ The agent's global Node CLIs install from `container/cli-tools.json` (a json-mer
 
 The version (`0.162.1`) is the canonical pin — this SKILL.md is the source of truth.
 Codex 0.156.0 and later look up the login's workspace id before any model request, so a ChatGPT login needs the credential gateway skill from the same NanoClaw release, which puts that id in the agent's stand-in login. `/update-nanoclaw` refreshes both together; do not refresh this skill alone on an older gateway.
+
+The memory hook goes into the image as a managed hook. `/etc/codex` is root-owned, so the agent cannot change it.
+
+```nc:append to:container/Dockerfile
+# add-codex: Codex runs only managed hooks, and /etc/codex is root-owned.
+COPY agent-runner/src/providers/codex-hooks.json /etc/codex/hooks.json
+```
 
 ### 4. Build
 
