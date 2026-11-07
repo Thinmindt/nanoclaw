@@ -5,7 +5,6 @@ import {
   codexMemorySection,
   codexRuntimeOwnership,
   codexTone,
-  type CodexMemorySessionHook,
   writeCodexConfigToml,
 } from '../providers/codex-app-server.js';
 import { archiveProviderExchange } from '../providers/exchange-archive.js';
@@ -53,9 +52,7 @@ export const codexRuntimeContract: ProviderRuntimeContract & {
 registerProviderContract(provider, codexRuntimeContract);
 
 function writeCodexRuntimeFiles(inputs: Partial<RuntimeConfigurationInputs>): void {
-  const hook = inputs.memory as CodexMemorySessionHook | undefined;
-  if (!hook) throw new Error('Codex provider requires a registered memory hook before query');
-  writeCodexConfigToml(inputs.mcpServers ?? {}, hook, codexInferenceSection(inputs.inference ?? {}));
+  writeCodexConfigToml(inputs.mcpServers ?? {}, codexInferenceSection(inputs.inference ?? {}));
 }
 
 function archiveCodexExchange({ exchange }: RuntimeAfterExchangeInput, fx: RuntimeCallbackEffects): string | null {

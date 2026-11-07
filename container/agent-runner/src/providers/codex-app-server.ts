@@ -16,7 +16,11 @@ function log(msg: string): void {
 
 const INIT_TIMEOUT_MS = 30_000;
 
-export const CODEX_APP_SERVER_ARGS = ['--dangerously-bypass-hook-trust', 'app-server', '--listen', 'stdio://'] as const;
+// No hook-trust bypass: Codex then runs only managed hooks, and the one managed
+// hook is the memory hook the image installs root-owned at /etc/codex/hooks.json
+// (codex-hooks.json). A hook the agent writes in its home or workspace stays
+// untrusted and never runs.
+export const CODEX_APP_SERVER_ARGS = ['app-server', '--listen', 'stdio://'] as const;
 
 export interface CodexMemorySessionHook {
   readonly command: string;
@@ -132,8 +136,6 @@ export interface TurnParams {
 }
 
 export function spawnCodexAppServer(): AppServer {
-  // NanoClaw generates the hook config and has no interactive user available
-  // to approve hook trust inside the container.
   const args = [...CODEX_APP_SERVER_ARGS];
   log(`Spawning: codex ${args.join(' ')}`);
 
@@ -289,8 +291,6 @@ export async function startOrResumeCodexThread(
     cwd: params.cwd,
     approvalPolicy: CODEX_APPROVAL_POLICY,
     sandbox: CODEX_SANDBOX_MODE,
-    // App-server ignores the CLI hook-trust flag; apply it to every thread.
-    config: { bypass_hook_trust: true },
     baseInstructions: params.baseInstructions,
     developerInstructions: params.developerInstructions,
     personality: params.personality ?? codexTone.default,
@@ -396,33 +396,23 @@ export function attachCodexAutoApproval(server: AppServer): void {
 }
 
 /**
- * Who writes config.toml / hooks.json before a query. The provider's own
- * direct write (in CodexProvider.query) runs only while this is false. The
+ * Who writes config.toml before a query. The provider's own direct write
+ * (in CodexProvider.query) runs only while this is false. The
  * runtime contract module (provider-contracts/codex.ts) flips it to true when
  * it loads, because on that core the contract's beforeQuery performs the
- * write — so each query writes the files exactly once on either core.
+ * write — so each query writes the file exactly once on either core.
  */
 export const codexRuntimeOwnership = { contractOwnsRuntimeFiles: false };
 
 export function writeCodexConfigToml(
   servers: Record<string, McpServerConfig>,
-  memorySessionHook: CodexMemorySessionHook,
   opts: { model?: string; effort?: string; fastMode?: boolean } = {},
 ): void {
   const codexConfigDir = path.join(process.env.HOME || '/home/node', '.codex');
   fs.mkdirSync(codexConfigDir, { recursive: true });
-  const configTomlPath = path.join(codexConfigDir, 'config.toml');
-  const hooksJsonPath = path.join(codexConfigDir, 'hooks.json');
-  fs.writeFileSync(configTomlPath, renderCodexConfigToml(buildCodexConfigPlan(servers, opts)));
-  const hooksExist = fs.existsSync(hooksJsonPath);
   fs.writeFileSync(
-    hooksJsonPath,
-    reconcileCodexHooksJson(
-      hooksExist ? fs.readFileSync(hooksJsonPath, 'utf-8') : '',
-      memorySessionHook,
-      hooksJsonPath,
-      hooksExist,
-    ),
+    path.join(codexConfigDir, 'config.toml'),
+    renderCodexConfigToml(buildCodexConfigPlan(servers, opts)),
   );
 }
 
@@ -556,65 +546,6 @@ export function renderCodexConfigToml(plan: CodexConfigPlan): string {
   }
 
   return lines.join('\n');
-}
-
-export function reconcileCodexHooksJson(
-  current: string,
-  memorySessionHook: CodexMemorySessionHook,
-  filePath = 'Codex hooks config',
-  exists = Boolean(current),
-): string {
-  const parsed: unknown = exists ? JSON.parse(current) : {};
-  if (!isRecord(parsed)) throw new Error(`${filePath} must contain a JSON object`);
-  const hooksConfig = parsed;
-  const hooks = objectProperty(hooksConfig, 'hooks');
-  const sessionStart = arrayProperty(hooks, 'SessionStart');
-
-  const memoryCommands = new Set([memorySessionHook.command, ...memorySessionHook.legacyCommands]);
-  const nextSessionStart = sessionStart
-    .map((entry) => removeNanoClawMemoryHooks(entry, memoryCommands))
-    .filter((entry) => entry !== undefined);
-  nextSessionStart.push({
-    matcher: memorySessionHook.sources.join('|'),
-    hooks: [{ type: 'command', command: memorySessionHook.command, timeout: 10 }],
-  });
-  hooks.SessionStart = nextSessionStart;
-  return JSON.stringify(hooksConfig, null, 2) + '\n';
-}
-
-function objectProperty(parent: Record<string, unknown>, key: string): Record<string, unknown> {
-  const value = parent[key];
-  if (value === undefined) {
-    const created: Record<string, unknown> = {};
-    parent[key] = created;
-    return created;
-  }
-  if (!isRecord(value)) {
-    throw new Error(`Codex hooks config property '${key}' must be an object`);
-  }
-  return value;
-}
-
-function arrayProperty(parent: Record<string, unknown>, key: string): unknown[] {
-  const value = parent[key];
-  if (value === undefined) return [];
-  if (!Array.isArray(value)) {
-    throw new Error(`Codex hooks config property '${key}' must be an array`);
-  }
-  return value;
-}
-
-function removeNanoClawMemoryHooks(value: unknown, commands: ReadonlySet<string>): unknown {
-  if (!isRecord(value) || !Array.isArray(value.hooks)) return value;
-  const remaining = value.hooks.filter((hook) => {
-    if (!isRecord(hook)) return true;
-    return typeof hook.command !== 'string' || !commands.has(hook.command);
-  });
-  return remaining.length > 0 ? { ...value, hooks: remaining } : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 export function buildCodexProcessEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

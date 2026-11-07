@@ -3,8 +3,6 @@ import { describe, expect, it } from 'bun:test';
 import { type AppServer, codexRuntimeOwnership, type writeCodexConfigToml } from './codex-app-server.js';
 import { CodexProvider, type CodexRuntimeDeps } from './codex.js';
 
-const MEMORY_HOOK = { command: 'bun /app/src/memory/hook.ts', legacyCommands: [], sources: ['startup'] };
-
 /**
  * Runtime deps that record config writes and stop the query at the app-server
  * handshake, so no codex binary is ever spawned.
@@ -38,7 +36,6 @@ function recordingRuntime(): { runtime: CodexRuntimeDeps; writes: Parameters<typ
 }
 
 async function runQueryToHandshake(provider: CodexProvider): Promise<void> {
-  provider.registerMemorySessionHook(MEMORY_HOOK);
   const query = provider.query({ prompt: 'hello', cwd: '/workspace/agent' });
   await expect(query.events.next()).rejects.toThrow('handshake stopped by test');
 }
@@ -56,10 +53,6 @@ describe('CodexProvider', () => {
     expect(new CodexProvider({ effort: 'xhigh' })).toBeInstanceOf(CodexProvider);
   });
 
-  it('requires the shared memory hook before starting a query', () => {
-    expect(() => new CodexProvider({}).query({ prompt: 'hello', cwd: '/workspace/agent' })).toThrow(/not registered/);
-  });
-
   it('writes the runtime files exactly once per query when no contract owns them', async () => {
     const previous = codexRuntimeOwnership.contractOwnsRuntimeFiles;
     codexRuntimeOwnership.contractOwnsRuntimeFiles = false;
@@ -70,9 +63,8 @@ describe('CodexProvider', () => {
         new CodexProvider({ mcpServers: servers, model: 'gpt-5', effort: 'HIGH', speed: 'fast' }, runtime),
       );
       expect(writes).toHaveLength(1);
-      const [mcpServers, hook, inference] = writes[0];
+      const [mcpServers, inference] = writes[0];
       expect(mcpServers).toEqual(servers);
-      expect(hook).toEqual(MEMORY_HOOK);
       // The same normalized values the contract path renders from.
       expect(inference).toEqual({ model: 'gpt-5', effort: 'high', fastMode: true });
     } finally {
@@ -104,7 +96,7 @@ describe('CodexProvider', () => {
         mcpServers: resolvedServers,
       });
       await runQueryToHandshake(provider);
-      const [mcpServers, , inference] = writes[0];
+      const [mcpServers, inference] = writes[0];
       expect(mcpServers).toEqual(resolvedServers);
       expect(inference).toEqual({ model: 'gpt-5', effort: 'high', fastMode: undefined });
     } finally {
@@ -124,7 +116,6 @@ describe('CodexProvider', () => {
       mcpServers: {},
       ...(personality ? { tone: { personality } } : {}),
     });
-    provider.registerMemorySessionHook(MEMORY_HOOK);
     const query = provider.query({ prompt: 'hi', cwd: '/workspace/agent' });
     await expect(query.events.next()).rejects.toThrow('thread settings captured');
   });

@@ -16,12 +16,7 @@ import {
   writeCodexConfigToml,
 } from './codex-app-server.js';
 import { CodexProvider } from './codex.js';
-
-const MEMORY_SESSION_HOOK = {
-  command: 'bun /app/src/memory/hook.ts',
-  legacyCommands: ['bun /app/src/memory-hook.ts'],
-  sources: ['startup', 'clear', 'compact'],
-} as const;
+import { MEMORY_SESSION_HOOK } from '../memory/session-hook.js';
 
 let tmpHome: string | null = null;
 const originalHome = process.env.HOME;
@@ -156,7 +151,6 @@ describe('Codex config TOML', () => {
           headers: { 'X-Api-Version': '2024-06' },
         },
       },
-      MEMORY_SESSION_HOOK,
       { model: 'gpt-5', effort: 'medium', fastMode: true },
     );
 
@@ -179,33 +173,21 @@ describe('Codex config TOML', () => {
     expect(content).toContain(
       '[mcp_servers.docs]\nurl = "https://mcp.example.com/mcp"\n[mcp_servers.docs.http_headers]\n"X-Api-Version" = "2024-06"',
     );
-
-    const hooks = JSON.parse(fs.readFileSync(path.join(tmpHome, '.codex', 'hooks.json'), 'utf-8'));
-    expect(hooks.hooks.SessionStart).toEqual([
-      {
-        matcher: 'startup|clear|compact',
-        hooks: [{ type: 'command', command: 'bun /app/src/memory/hook.ts', timeout: 10 }],
-      },
-    ]);
-    expect(CODEX_APP_SERVER_ARGS).toContain('--dangerously-bypass-hook-trust');
   });
 
   it('emits cwd for a stdio server above the env sub-table, and omits it when absent', () => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
     process.env.HOME = tmpHome;
 
-    writeCodexConfigToml(
-      {
-        probe: {
-          command: '/workspace/agent/plugins/sdr/run.js',
-          args: ['--flag'],
-          env: { FOO: 'bar' },
-          cwd: '/workspace/agent/plugin-data/sdr',
-        },
-        plain: { command: 'bun' },
+    writeCodexConfigToml({
+      probe: {
+        command: '/workspace/agent/plugins/sdr/run.js',
+        args: ['--flag'],
+        env: { FOO: 'bar' },
+        cwd: '/workspace/agent/plugin-data/sdr',
       },
-      MEMORY_SESSION_HOOK,
-    );
+      plain: { command: 'bun' },
+    });
 
     const content = fs.readFileSync(path.join(tmpHome, '.codex', 'config.toml'), 'utf-8');
     expect(content).toContain(
@@ -223,17 +205,14 @@ describe('Codex config TOML', () => {
     tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
     process.env.HOME = tmpHome;
 
-    writeCodexConfigToml(
-      {
-        'docs] [mcp_servers.evil]': {
-          type: 'http',
-          url: 'https://mcp.example.com/mcp',
-          headers: { 'X-V': '1' },
-        },
-        plain: { command: 'bun', env: { 'BAD KEY': 'v' } },
+    writeCodexConfigToml({
+      'docs] [mcp_servers.evil]': {
+        type: 'http',
+        url: 'https://mcp.example.com/mcp',
+        headers: { 'X-V': '1' },
       },
-      MEMORY_SESSION_HOOK,
-    );
+      plain: { command: 'bun', env: { 'BAD KEY': 'v' } },
+    });
 
     const content = fs.readFileSync(path.join(tmpHome, '.codex', 'config.toml'), 'utf-8');
     expect(content).toContain('[mcp_servers."docs] [mcp_servers.evil]"]');
@@ -248,90 +227,36 @@ describe('Codex config TOML', () => {
     process.env.HOME = tmpHome;
 
     expect(() =>
-      writeCodexConfigToml(
-        { 'docs]\n[mcp_servers.evil]': { type: 'http', url: 'https://mcp.example.com/mcp' } },
-        MEMORY_SESSION_HOOK,
-      ),
+      writeCodexConfigToml({ 'docs]\n[mcp_servers.evil]': { type: 'http', url: 'https://mcp.example.com/mcp' } }),
     ).toThrow(/newline/);
   });
+});
 
-  it('preserves unrelated hooks and refreshes only the NanoClaw memory entry', () => {
-    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
-    process.env.HOME = tmpHome;
-    const hooksPath = path.join(tmpHome, '.codex', 'hooks.json');
-    fs.mkdirSync(path.dirname(hooksPath), { recursive: true });
-    fs.writeFileSync(
-      hooksPath,
-      JSON.stringify({
-        version: 1,
-        hooks: {
-          Stop: [{ hooks: [{ type: 'command', command: 'custom-stop' }] }],
-          SessionStart: [
-            { matcher: 'resume', hooks: [{ type: 'command', command: 'custom-resume' }] },
-            {
-              matcher: '.*',
-              hooks: [
-                { type: 'command', command: 'bun /app/src/memory-hook.ts' },
-                { type: 'command', command: 'custom-start' },
-              ],
-            },
-          ],
-        },
-      }),
-    );
+// Codex runs a hook unreviewed only when it is managed, and the one managed
+// hook is the image's /etc/codex/hooks.json, copied from codex-hooks.json.
+describe('Codex hook trust', () => {
+  it('never bypasses hook trust', async () => {
+    const { server, requests } = autoRespondingServer();
 
-    writeCodexConfigToml({}, MEMORY_SESSION_HOOK);
-    writeCodexConfigToml({}, MEMORY_SESSION_HOOK);
+    await startOrResumeCodexThread(server, undefined, { cwd: '/workspace/agent' });
 
-    const config = JSON.parse(fs.readFileSync(hooksPath, 'utf-8'));
-    expect(config.version).toBe(1);
-    expect(config.hooks.Stop).toHaveLength(1);
-    expect(config.hooks.SessionStart).toContainEqual({
-      matcher: '.*',
-      hooks: [{ type: 'command', command: 'custom-start' }],
-    });
-    expect(
-      config.hooks.SessionStart.filter((entry: { hooks?: Array<{ command?: string }> }) =>
-        entry.hooks?.some((hook) => hook.command === 'bun /app/src/memory/hook.ts'),
-      ),
-    ).toEqual([
-      {
-        matcher: 'startup|clear|compact',
-        hooks: [{ type: 'command', command: 'bun /app/src/memory/hook.ts', timeout: 10 }],
+    expect(CODEX_APP_SERVER_ARGS).not.toContain('--dangerously-bypass-hook-trust');
+    expect(requests[0].params.config?.bypass_hook_trust).toBeUndefined();
+  });
+
+  it('installs the memory hook the runner registers', () => {
+    const hooks = JSON.parse(fs.readFileSync(new URL('./codex-hooks.json', import.meta.url), 'utf-8'));
+
+    expect(hooks).toEqual({
+      hooks: {
+        SessionStart: [
+          {
+            matcher: MEMORY_SESSION_HOOK.sources.join('|'),
+            hooks: [{ type: 'command', command: MEMORY_SESSION_HOOK.command, timeout: 10 }],
+          },
+        ],
       },
-    ]);
-  });
-
-  it('replaces config.toml before malformed hooks.json fails', () => {
-    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
-    process.env.HOME = tmpHome;
-    const codexDir = path.join(tmpHome, '.codex');
-    const configPath = path.join(codexDir, 'config.toml');
-    const hooksPath = path.join(codexDir, 'hooks.json');
-    fs.mkdirSync(codexDir, { recursive: true });
-    fs.writeFileSync(configPath, 'stale config');
-    fs.writeFileSync(hooksPath, '{');
-
-    expect(() => writeCodexConfigToml({}, MEMORY_SESSION_HOOK, { model: 'gpt-5' })).toThrow();
-    expect(fs.readFileSync(configPath, 'utf-8')).toContain('model = "gpt-5"');
-    expect(fs.readFileSync(configPath, 'utf-8')).not.toContain('stale config');
-    expect(fs.readFileSync(hooksPath, 'utf-8')).toBe('{');
-  });
-
-  it('replaces config.toml before an existing empty hooks.json fails', () => {
-    tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-home-'));
-    process.env.HOME = tmpHome;
-    const codexDir = path.join(tmpHome, '.codex');
-    const configPath = path.join(codexDir, 'config.toml');
-    const hooksPath = path.join(codexDir, 'hooks.json');
-    fs.mkdirSync(codexDir, { recursive: true });
-    fs.writeFileSync(configPath, 'stale config');
-    fs.writeFileSync(hooksPath, '');
-
-    expect(() => writeCodexConfigToml({}, MEMORY_SESSION_HOOK, { model: 'gpt-5' })).toThrow();
-    expect(fs.readFileSync(configPath, 'utf-8')).toContain('model = "gpt-5"');
-    expect(fs.readFileSync(configPath, 'utf-8')).not.toContain('stale config');
-    expect(fs.readFileSync(hooksPath, 'utf-8')).toBe('');
+    });
   });
 });
 
@@ -343,7 +268,6 @@ describe('Codex thread SessionStart source', () => {
 
     expect(requests[0].method).toBe('thread/start');
     expect(requests[0].params.personality).toBe('friendly');
-    expect(requests[0].params.config).toEqual({ bypass_hook_trust: true });
     expect(requests[0].params.sessionStartSource).toBe('startup');
   });
 
@@ -354,7 +278,6 @@ describe('Codex thread SessionStart source', () => {
 
     expect(requests[0].method).toBe('thread/resume');
     expect(requests[0].params.personality).toBe('pragmatic');
-    expect(requests[0].params.config).toEqual({ bypass_hook_trust: true });
     expect(requests[0].params.sessionStartSource).toBeUndefined();
   });
 });

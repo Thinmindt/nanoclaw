@@ -108,7 +108,6 @@ export class CodexProvider implements AgentProvider {
   private readonly inference: CodexConfigPlan['inference'];
   private readonly tone: ReturnType<typeof codexTone.toSettings>;
   private readonly runtime: CodexRuntimeDeps;
-  private memorySessionHook?: CodexMemorySessionHook;
 
   /**
    * `configuration` is present on a contract core: core has already run the
@@ -135,9 +134,8 @@ export class CodexProvider implements AgentProvider {
     }
   }
 
-  registerMemorySessionHook(hook: CodexMemorySessionHook): void {
-    this.memorySessionHook = hook;
-  }
+  // The image installs this hook for Codex (codex-hooks.json); nothing to write per query.
+  registerMemorySessionHook(_hook: CodexMemorySessionHook): void {}
 
   isSessionInvalid(err: unknown): boolean {
     const msg = err instanceof Error ? err.message : String(err);
@@ -145,8 +143,6 @@ export class CodexProvider implements AgentProvider {
   }
 
   query(input: QueryInput): AgentQuery {
-    if (!this.memorySessionHook) throw new Error('Codex memory session hook was not registered');
-    const memorySessionHook = this.memorySessionHook;
     const pending: string[] = [input.prompt];
     let waiting: (() => void) | null = null;
     let ended = false;
@@ -177,10 +173,10 @@ export class CodexProvider implements AgentProvider {
 
     async function* gen(): AsyncGenerator<ProviderEvent> {
       // On a contract core the contract's beforeQuery has already written
-      // config.toml and hooks.json for this query (see codexRuntimeOwnership);
+      // config.toml for this query (see codexRuntimeOwnership);
       // this direct write is the pre-contract core's path only.
       if (!codexRuntimeOwnership.contractOwnsRuntimeFiles) {
-        self.runtime.writeCodexConfigToml(self.mcpServers, memorySessionHook, self.inference);
+        self.runtime.writeCodexConfigToml(self.mcpServers, self.inference);
       }
       const server = self.runtime.spawnCodexAppServer();
       activeServer = server;

@@ -163,3 +163,5 @@ ARG AGENT_RUNNER_LOCK_SHA256=
 LABEL dev.nanoclaw.agent-runner-lock-sha256="${AGENT_RUNNER_LOCK_SHA256}"
 ARG IMAGE_SOURCE=local
 LABEL dev.nanoclaw.image-source="${IMAGE_SOURCE}"
+# add-codex: Codex runs only managed hooks, and /etc/codex is root-owned.
+COPY agent-runner/src/providers/codex-hooks.json /etc/codex/hooks.json
