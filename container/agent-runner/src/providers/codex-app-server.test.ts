@@ -5,7 +5,6 @@ import path from 'path';
 
 import {
   type AppServer,
-  CODEX_APP_SERVER_ARGS,
   attachCodexAutoApproval,
   buildCodexConfigPlan,
   buildCodexProcessEnv,
@@ -232,19 +231,10 @@ describe('Codex config TOML', () => {
   });
 });
 
-// Codex runs a hook unreviewed only when it is managed, and the one managed
-// hook is the image's /etc/codex/hooks.json, copied from codex-hooks.json.
-describe('Codex hook trust', () => {
-  it('never bypasses hook trust', async () => {
-    const { server, requests } = autoRespondingServer();
-
-    await startOrResumeCodexThread(server, undefined, { cwd: '/workspace/agent' });
-
-    expect(CODEX_APP_SERVER_ARGS).not.toContain('--dangerously-bypass-hook-trust');
-    expect(requests[0].params.config?.bypass_hook_trust).toBeUndefined();
-  });
-
-  it('installs the memory hook the runner registers', () => {
+// The image installs codex-hooks.json as /etc/codex/hooks.json, the one hook
+// Codex runs (codex-app-server.smoke.test.ts).
+describe('Codex managed hook', () => {
+  it('is the memory hook the runner registers', () => {
     const hooks = JSON.parse(fs.readFileSync(new URL('./codex-hooks.json', import.meta.url), 'utf-8'));
 
     expect(hooks).toEqual({
