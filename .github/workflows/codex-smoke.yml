@@ -9,6 +9,7 @@ on:
       - container/cli-tools.json
       - container/Dockerfile
       - container/agent-runner/src/providers/codex*
+      - container/agent-runner/src/provider-contracts/codex.ts
   workflow_dispatch:
 
 permissions:
