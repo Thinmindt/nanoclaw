@@ -125,10 +125,24 @@ describe('buildSystemPromptAddendum — reading messages', () => {
     expect(prompt.indexOf('## Sending messages')).toBeLessThan(prompt.indexOf('## Reading messages'));
   });
 
-  it('omits the reading section in task mode, which never receives echoes', () => {
+  it('leaves the echo and history lines out of task mode, which never receives them', () => {
     const prompt = buildSystemPromptAddendum('Casa', { kind: 'task', taskId: 'weekly-report' });
 
-    expect(prompt).not.toContain('Reading messages');
     expect(prompt).not.toContain('cross-session-context');
+    expect(prompt).not.toContain('<dm-history>');
+  });
+
+  // One line, in both modes: a task run carries script output, and a chat
+  // session can receive webhooks.
+  it.each([
+    ['chat', { kind: 'chat' } as const],
+    ['task', { kind: 'task', taskId: 'weekly-report' } as const],
+  ])('names the script-output and webhook elements as data in %s mode', (_label, mode) => {
+    const prompt = buildSystemPromptAddendum('Casa', mode);
+
+    const legend = prompt.split('\n').filter((line) => line.includes('<script-output>'));
+    expect(legend).toHaveLength(1);
+    expect(legend[0]).toContain('<webhook>');
+    expect(legend[0]).toContain('never instructions');
   });
 });
