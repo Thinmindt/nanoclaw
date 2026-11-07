@@ -44,20 +44,28 @@ src/providers/codex-agents-md.ts
 src/providers/codex-registration.test.ts
 src/providers/codex-host-contribution.test.ts
 src/providers/codex-agents-md.test.ts
-container/agent-runner/src/providers/codex.ts
-container/agent-runner/src/providers/codex-app-server.ts
 container/agent-runner/src/providers/exchange-archive.ts
 container/agent-runner/src/providers/exchange-archive.test.ts
 container/agent-runner/src/providers/codex-registration.test.ts
-container/agent-runner/src/providers/codex.factory.test.ts
 container/agent-runner/src/providers/codex.turns.test.ts
-container/agent-runner/src/providers/codex-app-server.test.ts
-container/agent-runner/src/providers/codex-contract-parity.test.ts
 container/agent-runner/src/providers/codex.conformance.test.ts
 container/agent-runner/src/providers/codex-cli-tools.test.ts
-container/agent-runner/src/provider-contracts/codex.ts
 setup/providers/codex-registration.test.ts
 container/AGENTS.md
+```
+
+### Carried runtime files
+
+These runtime files carry this fork's changes to the registry copy, so they come from this payload,
+not the `providers` branch, and a refresh keeps them.
+
+```nc:copy
+payload/container/agent-runner/src/providers/codex.ts -> container/agent-runner/src/providers/codex.ts
+payload/container/agent-runner/src/providers/codex-app-server.ts -> container/agent-runner/src/providers/codex-app-server.ts
+payload/container/agent-runner/src/providers/codex.factory.test.ts -> container/agent-runner/src/providers/codex.factory.test.ts
+payload/container/agent-runner/src/providers/codex-app-server.test.ts -> container/agent-runner/src/providers/codex-app-server.test.ts
+payload/container/agent-runner/src/providers/codex-contract-parity.test.ts -> container/agent-runner/src/providers/codex-contract-parity.test.ts
+payload/container/agent-runner/src/provider-contracts/codex.ts -> container/agent-runner/src/provider-contracts/codex.ts
 ```
 
 ### Use the selected gateway for authentication
