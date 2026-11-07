@@ -1,0 +1,31 @@
+# Starts the pinned Codex binary against the Codex runtime inside a freshly built agent
+# image (add-codex). Path-filtered on purpose: it is not a required check, so it runs
+# when the pin, the image or the runtime changes, and by hand from the Actions tab.
+name: codex-smoke
+
+on:
+  pull_request:
+    paths:
+      - container/cli-tools.json
+      - container/Dockerfile
+      - container/agent-runner/src/providers/codex*
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Build the agent image
+        run: ./container/build.sh
+      - name: Run the smoke test in the image, offline
+        run: |
+          source setup/lib/install-slug.sh
+          docker run --rm --network none -e CODEX_SMOKE=1 \
+            -v "$PWD/container/agent-runner/src:/app/src:ro" -w /app \
+            --entrypoint bun "$(container_image_base):latest" \
+            test src/providers/codex-app-server.smoke.test.ts

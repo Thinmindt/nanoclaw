@@ -34,6 +34,7 @@ rm -f src/providers/codex.ts \
       src/provider-contracts/codex.ts \
       container/agent-runner/src/providers/codex.ts \
       container/agent-runner/src/providers/codex-app-server.ts \
+      container/agent-runner/src/providers/codex-app-server.smoke.test.ts \
       container/agent-runner/src/providers/codex-hooks.json \
       container/agent-runner/src/providers/exchange-archive.ts \
       container/agent-runner/src/providers/exchange-archive.test.ts \
@@ -47,7 +48,8 @@ rm -f src/providers/codex.ts \
       container/agent-runner/src/provider-contracts/codex.ts \
       setup/providers/codex.ts \
       setup/providers/codex.test.ts \
-      setup/providers/codex-registration.test.ts
+      setup/providers/codex-registration.test.ts \
+      .github/workflows/codex-smoke.yml
 ```
 
 This skill itself (`.claude/skills/add-codex/`) stays — it ships with trunk so the provider can be re-added later.

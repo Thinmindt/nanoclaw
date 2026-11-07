@@ -71,6 +71,8 @@ payload/container/agent-runner/src/providers/codex.factory.test.ts -> container/
 payload/container/agent-runner/src/providers/codex-app-server.test.ts -> container/agent-runner/src/providers/codex-app-server.test.ts
 payload/container/agent-runner/src/providers/codex-contract-parity.test.ts -> container/agent-runner/src/providers/codex-contract-parity.test.ts
 payload/container/agent-runner/src/provider-contracts/codex.ts -> container/agent-runner/src/provider-contracts/codex.ts
+payload/container/agent-runner/src/providers/codex-app-server.smoke.test.ts -> container/agent-runner/src/providers/codex-app-server.smoke.test.ts
+payload/.github/workflows/codex-smoke.yml -> .github/workflows/codex-smoke.yml
 ```
 
 ### Use the selected gateway for authentication
@@ -144,6 +146,8 @@ pnpm exec tsx scripts/provider-contract-verifier.ts --required-declared codex
 ```
 
 The registration tests import only the real barrels — they go red if a barrel line is missing, a barrel fails to evaluate, or the payload is broken.
+
+None of those start the Codex binary. `codex-app-server.smoke.test.ts` does, in the built image and offline: it starts a thread on the pinned app-server and checks that only the image's hook runs. `.github/workflows/codex-smoke.yml` runs it when the pin, the Dockerfile or the runtime changes; its last step is the command to run it locally.
 
 ## Authenticate
 
