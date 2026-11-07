@@ -496,6 +496,10 @@ async function testPreContractProviders(): Promise<void> {
     git(['checkout', '--quiet', '--detach', git(['rev-parse', 'HEAD'])], root);
     await command('pnpm install --frozen-lockfile --prefer-offline', root);
     await command('bun install --frozen-lockfile', join(root, 'container/agent-runner'));
+    // A provider whose contract trunk already carries stays declared under its old payload.
+    const expectedLegacyProviders = ['codex', 'opencode'].filter(
+      (provider) => !existsSync(join(root, 'src/provider-contracts', `${provider}.ts`)),
+    );
 
     const refs = { providers: PRE_CONTRACT_PROVIDERS_SHA };
     for (const name of LEGACY_PROVIDER_SKILLS) {
@@ -505,7 +509,7 @@ async function testPreContractProviders(): Promise<void> {
     }
 
     const verification = await verifyProviderContracts(root, {
-      expectedLegacyProviders: ['codex', 'opencode'],
+      expectedLegacyProviders,
       exec: (cmd, cwd) => command(cmd, cwd),
     });
     if (verification.status !== 'passed') {

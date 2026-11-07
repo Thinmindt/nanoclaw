@@ -33,6 +33,7 @@ Check whether the payload is already wired (a prior apply, or a trunk that still
 - `setup/providers/codex.ts` and both `provider-contracts/codex.ts` declarations (host and container)
 - `import './codex.js';` in the three provider barrels and both contract barrels
 - an `@openai/codex` entry in `container/cli-tools.json`
+- the `/etc/codex/hooks.json` line in `container/Dockerfile`
 
 ### 1. Fetch and copy the payload
 
@@ -44,20 +45,34 @@ src/providers/codex-agents-md.ts
 src/providers/codex-registration.test.ts
 src/providers/codex-host-contribution.test.ts
 src/providers/codex-agents-md.test.ts
-container/agent-runner/src/providers/codex.ts
-container/agent-runner/src/providers/codex-app-server.ts
 container/agent-runner/src/providers/exchange-archive.ts
 container/agent-runner/src/providers/exchange-archive.test.ts
 container/agent-runner/src/providers/codex-registration.test.ts
-container/agent-runner/src/providers/codex.factory.test.ts
 container/agent-runner/src/providers/codex.turns.test.ts
-container/agent-runner/src/providers/codex-app-server.test.ts
-container/agent-runner/src/providers/codex-contract-parity.test.ts
 container/agent-runner/src/providers/codex.conformance.test.ts
 container/agent-runner/src/providers/codex-cli-tools.test.ts
-container/agent-runner/src/provider-contracts/codex.ts
 setup/providers/codex-registration.test.ts
 container/AGENTS.md
+```
+
+### Carried runtime files
+
+These runtime files carry this fork's changes to the registry copy, so they come from this payload,
+not the `providers` branch, and a refresh keeps them. The change: Codex runs without
+`--dangerously-bypass-hook-trust`, so it runs only managed hooks. The one managed hook is the memory
+hook in `codex-hooks.json`, which the image installs root-owned at `/etc/codex/hooks.json` (step 3).
+A hook the agent writes in its Codex home or its workspace stays untrusted and never runs.
+
+```nc:copy
+payload/container/agent-runner/src/providers/codex-hooks.json -> container/agent-runner/src/providers/codex-hooks.json
+payload/container/agent-runner/src/providers/codex.ts -> container/agent-runner/src/providers/codex.ts
+payload/container/agent-runner/src/providers/codex-app-server.ts -> container/agent-runner/src/providers/codex-app-server.ts
+payload/container/agent-runner/src/providers/codex.factory.test.ts -> container/agent-runner/src/providers/codex.factory.test.ts
+payload/container/agent-runner/src/providers/codex-app-server.test.ts -> container/agent-runner/src/providers/codex-app-server.test.ts
+payload/container/agent-runner/src/providers/codex-contract-parity.test.ts -> container/agent-runner/src/providers/codex-contract-parity.test.ts
+payload/container/agent-runner/src/provider-contracts/codex.ts -> container/agent-runner/src/provider-contracts/codex.ts
+payload/container/agent-runner/src/providers/codex-app-server.smoke.test.ts -> container/agent-runner/src/providers/codex-app-server.smoke.test.ts
+payload/.github/workflows/codex-smoke.yml -> .github/workflows/codex-smoke.yml
 ```
 
 ### Use the selected gateway for authentication
@@ -107,6 +122,14 @@ The agent's global Node CLIs install from `container/cli-tools.json` (a json-mer
 ```
 
 The version (`0.162.1`) is the canonical pin — this SKILL.md is the source of truth.
+Codex 0.156.0 and later look up the login's workspace id before any model request, so a ChatGPT login needs the credential gateway skill from the same NanoClaw release, which puts that id in the agent's stand-in login. `/update-nanoclaw` refreshes both together; do not refresh this skill alone on an older gateway.
+
+The memory hook goes into the image as a managed hook. `/etc/codex` is root-owned, so the agent cannot change it.
+
+```nc:append to:container/Dockerfile
+# add-codex: Codex runs only managed hooks, and /etc/codex is root-owned.
+COPY agent-runner/src/providers/codex-hooks.json /etc/codex/hooks.json
+```
 
 ### 4. Build
 
@@ -123,6 +146,8 @@ pnpm exec tsx scripts/provider-contract-verifier.ts --required-declared codex
 ```
 
 The registration tests import only the real barrels — they go red if a barrel line is missing, a barrel fails to evaluate, or the payload is broken.
+
+None of those start the Codex binary. `codex-app-server.smoke.test.ts` does, in the built image and offline: it starts a thread on the pinned app-server and checks that only the image's hook runs. `.github/workflows/codex-smoke.yml` runs it when the pin, the Dockerfile or the runtime changes; its last step is the command to run it locally.
 
 ## Authenticate
 
