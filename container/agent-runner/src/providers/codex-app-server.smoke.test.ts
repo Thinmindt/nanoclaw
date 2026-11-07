@@ -19,16 +19,17 @@ import {
 (process.env.CODEX_SMOKE ? describe : describe.skip)('pinned codex app-server', () => {
   it('starts a thread and runs only the image hook', async () => {
     const cwd = '/workspace/agent';
-    // What an agent could leave behind: a corrupt hooks file in its Codex home
-    // and a hook of its own in its workspace.
-    fs.mkdirSync(path.join(os.homedir(), '.codex'), { recursive: true });
-    fs.writeFileSync(path.join(os.homedir(), '.codex', 'hooks.json'), '{');
-    fs.mkdirSync(path.join(cwd, '.codex'), { recursive: true });
+    const agentHooks = path.join(os.homedir(), '.codex', 'hooks.json');
+    fs.mkdirSync(path.dirname(agentHooks), { recursive: true });
+    fs.mkdirSync(cwd, { recursive: true });
+    // A corrupt hooks file the agent left in its Codex home does not stop the
+    // config write, and a hook of its own there does not run.
+    fs.writeFileSync(agentHooks, '{');
+    writeCodexConfigToml({});
     fs.writeFileSync(
-      path.join(cwd, '.codex', 'hooks.json'),
+      agentHooks,
       JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'true' }] }] } }),
     );
-    writeCodexConfigToml({});
 
     const server = spawnCodexAppServer();
     try {
