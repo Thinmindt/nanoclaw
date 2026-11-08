@@ -17,6 +17,7 @@ import { brightSelect } from '../lib/bright-select.js';
 import { type AssistContext, BIG_PICTURE_FILES, STEP_FILES } from '../lib/claude-assist.js';
 import { brandBody, note } from '../lib/theme.js';
 import * as setupLog from '../logs.js';
+import { upsertEnvVar } from '../set-env.js';
 import { type FailureAssistResult, registerSetupProvider } from './registry.js';
 
 // ─── auth step ───────────────────────────────────────────────────────────
@@ -208,11 +209,25 @@ export async function runCodexLoginAuth(method: 'browser' | 'device', store?: Pr
     console.log(k.dim(`   ${message}`));
     process.exit(1);
   }
+  const plan = loginPlanType(authJsonPath);
   removeLoginHome();
+  // A gateway's login stand-in claims its own plan; the host replaces it with this one.
+  if (plan) upsertEnvVar('CODEX_CHATGPT_PLAN', plan);
   setupLog.step('auth', 'success', durationMs, { PROVIDER: 'codex', METHOD: method });
   p.log.success(
     brandBody('OpenAI account connected — credentials live in your selected gateway, never in the container.'),
   );
+}
+
+/** The ChatGPT plan the login's id token claims. Codex offers tools by it. */
+function loginPlanType(authJsonPath: string): string | undefined {
+  try {
+    const idToken = JSON.parse(fs.readFileSync(authJsonPath, 'utf8')).tokens.id_token;
+    const claims = JSON.parse(Buffer.from(idToken.split('.')[1], 'base64url').toString('utf8'));
+    return claims['https://api.openai.com/auth'].chatgpt_plan_type;
+  } catch {
+    return undefined;
+  }
 }
 
 function runInherit(cmd: string, args: string[], extraEnv?: Record<string, string>): Promise<number> {
