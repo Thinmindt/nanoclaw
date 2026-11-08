@@ -62,6 +62,7 @@ describe('Codex config TOML', () => {
         'approval_policy = "never"',
         'project_doc_max_bytes = 32768',
         'mcp_optional_startup_grace_ms = 0',
+        'web_search = "disabled"',
         'model = "gpt-5"',
         'model_reasoning_effort = "medium"',
         'service_tier = "fast"',

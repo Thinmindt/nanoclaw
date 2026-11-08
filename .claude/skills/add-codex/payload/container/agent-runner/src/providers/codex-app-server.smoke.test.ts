@@ -63,7 +63,7 @@ async function hooksRunAtFirstTurn(): Promise<string[]> {
   it('refuses the web search the agent asks for', async () => {
     writeCodexConfigToml({});
     const config = path.join(os.homedir(), '.codex', 'config.toml');
-    fs.writeFileSync(config, 'web_search = "live"\n' + fs.readFileSync(config, 'utf8'));
+    fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('web_search = "disabled"', 'web_search = "live"'));
 
     const server = spawnCodexAppServer();
     try {
