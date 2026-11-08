@@ -165,3 +165,4 @@ ARG IMAGE_SOURCE=local
 LABEL dev.nanoclaw.image-source="${IMAGE_SOURCE}"
 # add-codex: Codex runs only managed hooks, and /etc/codex is root-owned.
 COPY agent-runner/src/providers/codex-hooks.json /etc/codex/hooks.json
+COPY agent-runner/src/providers/codex-requirements.toml /etc/codex/requirements.toml

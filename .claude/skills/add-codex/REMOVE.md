@@ -36,6 +36,7 @@ rm -f src/providers/codex.ts \
       container/agent-runner/src/providers/codex-app-server.ts \
       container/agent-runner/src/providers/codex-app-server.smoke.test.ts \
       container/agent-runner/src/providers/codex-hooks.json \
+      container/agent-runner/src/providers/codex-requirements.toml \
       container/agent-runner/src/providers/exchange-archive.ts \
       container/agent-runner/src/providers/exchange-archive.test.ts \
       container/agent-runner/src/providers/codex-registration.test.ts \
@@ -56,7 +57,7 @@ This skill itself (`.claude/skills/add-codex/`) stays — it ships with trunk so
 
 `container/AGENTS.md` stays only if another installed provider uses agent surfaces; otherwise remove it too.
 
-Delete the two `add-codex` lines at the end of `container/Dockerfile`: the comment and the `COPY` of `codex-hooks.json` to `/etc/codex/hooks.json`.
+Delete the three `add-codex` lines at the end of `container/Dockerfile`: the comment and the two `COPY` lines into `/etc/codex/`.
 
 ## 4. Remove the CLI manifest entry
 

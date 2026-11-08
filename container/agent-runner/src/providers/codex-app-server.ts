@@ -491,6 +491,9 @@ export function renderCodexConfigToml(plan: CodexConfigPlan): string {
     // spawns a fresh app-server, so every server starts cold. 0 restores the
     // wait-until-ready behaviour, bounded by each server's startup timeout.
     'mcp_optional_startup_grace_ms = 0',
+    // The image's /etc/codex/requirements.toml allows only this mode; asking for
+    // any other makes Codex log a fallback error at every spawn.
+    'web_search = "disabled"',
   ];
   if (plan.inference.model) lines.push(`model = ${tomlBasicString(plan.inference.model)}`);
   if (plan.inference.effort) lines.push(`model_reasoning_effort = ${tomlBasicString(plan.inference.effort)}`);

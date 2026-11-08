@@ -59,4 +59,25 @@ async function hooksRunAtFirstTurn(): Promise<string[]> {
     );
     expect(await hooksRunAtFirstTurn()).toEqual(['/etc/codex/hooks.json']);
   }, 60_000);
+
+  it('refuses the web search the agent asks for', async () => {
+    writeCodexConfigToml({});
+    const config = path.join(os.homedir(), '.codex', 'config.toml');
+    fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('web_search = "disabled"', 'web_search = "live"'));
+
+    const server = spawnCodexAppServer();
+    try {
+      const warning = new Promise<string>((resolve) => {
+        server.notificationHandlers.push((n: JsonRpcNotification) => {
+          if (n.method === 'configWarning') resolve(n.params?.summary as string);
+        });
+      });
+      await initializeCodexAppServer(server);
+      expect(await warning).toContain(
+        '`Live` is not in the allowed set [Disabled] (set by /etc/codex/requirements.toml)',
+      );
+    } finally {
+      killCodexAppServer(server);
+    }
+  }, 60_000);
 });
