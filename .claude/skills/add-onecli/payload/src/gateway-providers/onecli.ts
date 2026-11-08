@@ -23,11 +23,14 @@ const env = readEnvFile([
   'ONECLI_GATEWAY_CONTAINER',
   'ANTHROPIC_BASE_URL',
   'ONECLI_CONSOLE_URL',
+  'CODEX_CHATGPT_PLAN',
 ]);
 const onecliUrl = process.env.ONECLI_URL || env.ONECLI_URL;
 const onecliApiKey = process.env.ONECLI_API_KEY || env.ONECLI_API_KEY;
 const gatewayContainer = process.env.ONECLI_GATEWAY_CONTAINER || env.ONECLI_GATEWAY_CONTAINER || 'onecli';
 const anthropicBaseUrl = process.env.ANTHROPIC_BASE_URL || env.ANTHROPIC_BASE_URL;
+/** Written by the Codex sign-in step from the real login's id token. */
+const codexPlan = process.env.CODEX_CHATGPT_PLAN || env.CODEX_CHATGPT_PLAN;
 const onecli = new OneCLI({ url: onecliUrl, apiKey: onecliApiKey });
 const healthUrl = new URL('/v1/health', onecliUrl || 'https://api.onecli.sh').toString();
 const liveLeases = new Set<{ unavailable?: string; notify?: (reason: string) => void }>();
@@ -43,6 +46,7 @@ export function contributionFromConfig(
   groupScope: string,
   dataDir = DATA_DIR,
   accountId?: string,
+  planType?: string,
 ): OneCLIContribution {
   const env = { ...config.env };
   const mounts: GatewayMount[] = [];
@@ -64,7 +68,7 @@ export function contributionFromConfig(
     env.DENO_CERT = target;
   }
   for (const stub of config.credentialStubs ?? []) {
-    mount('stub', accountId ? withAccountId(stub.content, accountId) : stub.content, stub.containerPath);
+    mount('stub', accountId ? withAccountId(stub.content, accountId, planType) : stub.content, stub.containerPath);
   }
   return { env, mounts };
 }
@@ -163,7 +167,7 @@ async function ensureSession(input: GatewaySessionInput, signal: AbortSignal): P
   return {
     ...monitorLease(signal),
     contribution: {
-      ...withProviderEnv(contributionFromConfig(config, input.key.agentGroupId, DATA_DIR, accountId)),
+      ...withProviderEnv(contributionFromConfig(config, input.key.agentGroupId, DATA_DIR, accountId, codexPlan)),
       networkAccess: {
         endpoint: 'host.docker.internal',
         target: { kind: 'runtime', identity: gatewayContainer },

@@ -25,10 +25,12 @@ export function stubNeedsAccountId(content: string): boolean {
 
 /**
  * Put the stored login's workspace id into the stand-in. Clients match it
- * against the account's workspace list before any model request. Tokens stay
+ * against the account's workspace list before any model request. The plan
+ * recorded at sign-in replaces the stand-in's "free" claim, from which Codex
+ * drops tools such as image generation before any request. Tokens stay
  * placeholders; the gateway still injects the real ones.
  */
-export function withAccountId(content: string, accountId: string): string {
+export function withAccountId(content: string, accountId: string, planType?: string): string {
   if (!ACCOUNT_ID.test(accountId) || !stubNeedsAccountId(content)) return content;
   const auth = parse(content)!;
   const tokens = auth.tokens!;
@@ -39,6 +41,7 @@ export function withAccountId(content: string, accountId: string): string {
       const claims = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
       if (claims?.[AUTH_CLAIMS]?.chatgpt_account_id === STUB_ACCOUNT_ID) {
         claims[AUTH_CLAIMS].chatgpt_account_id = accountId;
+        if (planType) claims[AUTH_CLAIMS].chatgpt_plan_type = planType;
         parts[1] = Buffer.from(JSON.stringify(claims)).toString('base64url');
         tokens.id_token = parts.join('.');
       }

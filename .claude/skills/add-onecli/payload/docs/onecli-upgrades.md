@@ -153,7 +153,12 @@ OneCLI 1.42.0's ChatGPT login stub carries the fixed account id
 workspace list before any model request, so the provider replaces it with the
 workspace id OneCLI recorded when the login was saved (secret metadata, read
 from `/v1/secrets`). Tokens in the stub stay placeholders. The workspace id is
-an identifier, not a credential, and the agent can read it. If OneCLI cannot
+an identifier, not a credential, and the agent can read it. The stub's id token
+also claims the free plan, and Codex drops the tools that plan lacks, such as
+image generation, before any request. OneCLI keeps no plan in its metadata, so
+the sign-in step writes the real login's plan to `CODEX_CHATGPT_PLAN` in `.env`
+and the provider puts it in the claim along with the workspace id. Without that
+key the claim stays as OneCLI wrote it. If OneCLI cannot
 serve the metadata, the spawn stops like a failed configuration fetch. If the
 vault holds several ChatGPT logins, or one without a recorded id, the stub
 keeps the fixed id and the provider logs a warning. To fix that, delete the

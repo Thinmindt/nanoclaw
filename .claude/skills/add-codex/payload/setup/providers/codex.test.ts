@@ -19,6 +19,8 @@ vi.mock('child_process', () => ({
 
 // Keep the auth flow's structured logging out of logs/setup.log.
 vi.mock('../logs.js', () => ({ step: vi.fn(), userInput: vi.fn() }));
+// Keep the recorded plan out of the checkout's .env.
+vi.mock('../set-env.js', () => ({ upsertEnvVar: vi.fn() }));
 
 // The API-key path reads the key through clack's masked prompt; everything
 // else in the module keeps the real clack rendering.
@@ -31,6 +33,7 @@ vi.mock('@clack/prompts', async (original) => ({
 }));
 
 import * as setupLog from '../logs.js';
+import { upsertEnvVar } from '../set-env.js';
 import {
   buildCodexFailurePrompt,
   offerCodexFailureAssist,
@@ -175,6 +178,23 @@ describe('runCodexLoginAuth', () => {
 
     // The isolated dir holds a live credential — gone once vaulted.
     expect(fs.existsSync(codexHome!)).toBe(false);
+  });
+
+  it("records the login's plan for the gateway stand-in", async () => {
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: '', stderr: '' });
+    const payload = Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_plan_type: 'plus' } }));
+    mockSpawn.mockImplementation((...args: unknown[]) => {
+      const opts = args[2] as { env?: NodeJS.ProcessEnv };
+      const auth = { tokens: { id_token: `e30.${payload.toString('base64url')}.c2ln` } };
+      fs.writeFileSync(path.join(opts.env!.CODEX_HOME!, 'auth.json'), JSON.stringify(auth));
+      const child = new EventEmitter();
+      setImmediate(() => child.emit('close', 0));
+      return child;
+    });
+
+    await runCodexLoginAuth('browser', { has: async () => false, save: vi.fn() });
+
+    expect(upsertEnvVar).toHaveBeenCalledWith('CODEX_CHATGPT_PLAN', 'plus');
   });
 });
 
