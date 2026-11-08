@@ -38,7 +38,7 @@ describe('OneCLI ChatGPT login stand-in', () => {
     expect(stubNeedsAccountId('not json')).toBe(false);
   });
 
-  it('writes the workspace id into the account field and the id token claim, tokens untouched', () => {
+  it('writes the workspace id into the account field and the id token claim; tokens and, with no recorded plan, the plan claim untouched', () => {
     const out = JSON.parse(withAccountId(stub(), 'ws-1234_abcd'));
     expect(out.tokens.account_id).toBe('ws-1234_abcd');
     expect(claims(out.tokens.id_token)['https://api.openai.com/auth']).toEqual({

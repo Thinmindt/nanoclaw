@@ -51,6 +51,7 @@ vi.mock('../env.js', () => ({
     ONECLI_URL: 'http://localhost:1',
     ONECLI_API_KEY: 'unused',
     ANTHROPIC_BASE_URL: 'https://anthropic.example.com',
+    CODEX_CHATGPT_PLAN: 'plus',
   }),
 }));
 
@@ -250,7 +251,7 @@ describe('OneCLI gateway package', () => {
       OPENAI_API_KEY: null,
       tokens: {
         id_token: `${encode({ alg: 'HS256' })}.${encode({
-          'https://api.openai.com/auth': { chatgpt_account_id: 'onecli-managed' },
+          'https://api.openai.com/auth': { chatgpt_plan_type: 'free', chatgpt_account_id: 'onecli-managed' },
         })}.c2ln`,
         access_token: 'onecli-managed',
         refresh_token: 'onecli-managed',
@@ -271,8 +272,12 @@ describe('OneCLI gateway package', () => {
           'utf8',
         ),
       );
+    const stagedPlan = (lease: Awaited<ReturnType<typeof provider.sessions.ensure>>) =>
+      JSON.parse(Buffer.from(stagedStub(lease).tokens.id_token.split('.')[1], 'base64url').toString())[
+        'https://api.openai.com/auth'
+      ].chatgpt_plan_type;
 
-    it('stages the stored login workspace id from OneCLI secret metadata', async () => {
+    it('stages the stored login workspace id from OneCLI secret metadata and the plan recorded at sign-in', async () => {
       withStub();
       const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
         Response.json([
@@ -290,6 +295,7 @@ describe('OneCLI gateway package', () => {
         const staged = stagedStub(lease);
         expect(staged.tokens.account_id).toBe('ws-real-1');
         expect(staged.tokens.access_token).toBe('onecli-managed');
+        expect(stagedPlan(lease)).toBe('plus');
       } finally {
         controller.abort();
         fetchMock.mockRestore();
@@ -323,6 +329,7 @@ describe('OneCLI gateway package', () => {
         try {
           const lease = await provider.sessions.ensure(input('s1'), controller.signal);
           expect(stagedStub(lease).tokens.account_id).toBe('onecli-managed');
+          expect(stagedPlan(lease)).toBe('free');
           expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('placeholder account id'), expect.anything());
         } finally {
           controller.abort();
