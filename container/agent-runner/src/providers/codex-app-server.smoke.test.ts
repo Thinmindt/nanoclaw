@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -59,6 +60,27 @@ async function hooksRunAtFirstTurn(): Promise<string[]> {
     );
     expect(await hooksRunAtFirstTurn()).toEqual(['/etc/codex/hooks.json']);
   }, 60_000);
+
+  it('reads apps, plugins, browser and computer use as off, image generation as on', () => {
+    writeCodexConfigToml({});
+    const listed = execFileSync('codex', ['features', 'list'], { encoding: 'utf8' });
+    const enabled = Object.fromEntries(
+      listed
+        .trim()
+        .split('\n')
+        .map((line) => [line.split(/\s+/)[0], line.endsWith('true')]),
+    );
+    expect(enabled).toMatchObject({
+      apps: false,
+      plugins: false,
+      remote_plugin: false,
+      browser_use: false,
+      browser_use_external: false,
+      browser_use_full_cdp_access: false,
+      computer_use: false,
+      image_generation: true,
+    });
+  });
 
   it('refuses the web search the agent asks for', async () => {
     writeCodexConfigToml({});
