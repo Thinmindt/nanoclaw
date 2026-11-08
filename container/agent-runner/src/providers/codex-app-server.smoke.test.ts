@@ -8,6 +8,7 @@ import {
   type JsonRpcNotification,
   initializeCodexAppServer,
   killCodexAppServer,
+  sendCodexRequest,
   spawnCodexAppServer,
   startCodexTurn,
   startOrResumeCodexThread,
@@ -59,6 +60,62 @@ async function hooksRunAtFirstTurn(): Promise<string[]> {
       JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'true' }] }] } }),
     );
     expect(await hooksRunAtFirstTurn()).toEqual(['/etc/codex/hooks.json']);
+  }, 60_000);
+
+  it('runs the image hook again after a compaction', async () => {
+    // Codex's own provider compacts remotely, so offline the compaction fails and
+    // no hook runs. Against a provider on localhost Codex compacts locally; this
+    // stub answers every request, the turn and the summary, with one reply.
+    const reply = [
+      { type: 'response.created', response: { id: 'resp' } },
+      {
+        type: 'response.output_item.done',
+        item: { type: 'message', role: 'assistant', id: 'msg', content: [{ type: 'output_text', text: 'ok' }] },
+      },
+      { type: 'response.completed', response: { id: 'resp' } },
+    ]
+      .map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`)
+      .join('');
+    const stub = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      fetch: () => new Response(reply, { headers: { 'content-type': 'text/event-stream' } }),
+    });
+
+    writeCodexConfigToml({});
+    const config = path.join(os.homedir(), '.codex', 'config.toml');
+    fs.writeFileSync(
+      config,
+      `model_provider = "stub"\n${fs.readFileSync(config, 'utf8')}\n` +
+        `[model_providers.stub]\nname = "stub"\nbase_url = "http://127.0.0.1:${stub.port}/v1"\nwire_api = "responses"\n`,
+    );
+
+    const server = spawnCodexAppServer();
+    try {
+      const hookSources: string[] = [];
+      let turnCompleted = () => {};
+      server.notificationHandlers.push((n: JsonRpcNotification) => {
+        if (n.method === 'hook/started') hookSources.push((n.params?.run as { sourcePath: string }).sourcePath);
+        if (n.method === 'turn/completed') turnCompleted();
+      });
+      async function untilTurnCompleted(start: () => Promise<unknown>): Promise<void> {
+        const completed = new Promise<void>((resolve) => (turnCompleted = resolve));
+        await start();
+        await completed;
+      }
+
+      await initializeCodexAppServer(server);
+      const threadId = await startOrResumeCodexThread(server, undefined, { cwd });
+      await untilTurnCompleted(() => startCodexTurn(server, { threadId, inputText: 'hello', cwd }));
+      await untilTurnCompleted(() => sendCodexRequest(server, 'thread/compact/start', { threadId }));
+      // SessionStart with source compact runs at the turn after the compaction;
+      // a turn with no compaction before it runs no hook.
+      await untilTurnCompleted(() => startCodexTurn(server, { threadId, inputText: 'again', cwd }));
+      expect(hookSources).toEqual(['/etc/codex/hooks.json', '/etc/codex/hooks.json']);
+    } finally {
+      killCodexAppServer(server);
+      stub.stop();
+    }
   }, 60_000);
 
   it('reads apps, plugins, browser and computer use as off, image generation as on', () => {
