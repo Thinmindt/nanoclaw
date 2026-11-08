@@ -33,7 +33,7 @@ Check whether the payload is already wired (a prior apply, or a trunk that still
 - `setup/providers/codex.ts` and both `provider-contracts/codex.ts` declarations (host and container)
 - `import './codex.js';` in the three provider barrels and both contract barrels
 - an `@openai/codex` entry in `container/cli-tools.json`
-- the `/etc/codex/hooks.json` line in `container/Dockerfile`
+- the `/etc/codex/hooks.json` and `/etc/codex/requirements.toml` lines in `container/Dockerfile`
 
 ### 1. Fetch and copy the payload
 
@@ -62,9 +62,14 @@ not the `providers` branch, and a refresh keeps them. The change: Codex runs wit
 `--dangerously-bypass-hook-trust`, so it runs only managed hooks. The one managed hook is the memory
 hook in `codex-hooks.json`, which the image installs root-owned at `/etc/codex/hooks.json` (step 3).
 A hook the agent writes in its Codex home or its workspace stays untrusted and never runs.
+Web search is off the same way: `codex-requirements.toml`, installed root-owned at
+`/etc/codex/requirements.toml`, allows only the `disabled` mode, so Codex refuses any mode the
+agent's own `config.toml` asks for. Web search runs on OpenAI's side, where the egress gateway
+never sees the query.
 
 ```nc:copy
 payload/container/agent-runner/src/providers/codex-hooks.json -> container/agent-runner/src/providers/codex-hooks.json
+payload/container/agent-runner/src/providers/codex-requirements.toml -> container/agent-runner/src/providers/codex-requirements.toml
 payload/container/agent-runner/src/providers/codex.ts -> container/agent-runner/src/providers/codex.ts
 payload/container/agent-runner/src/providers/codex-app-server.ts -> container/agent-runner/src/providers/codex-app-server.ts
 payload/container/agent-runner/src/providers/codex.factory.test.ts -> container/agent-runner/src/providers/codex.factory.test.ts
@@ -124,11 +129,15 @@ The agent's global Node CLIs install from `container/cli-tools.json` (a json-mer
 The version (`0.162.1`) is the canonical pin — this SKILL.md is the source of truth.
 Codex 0.156.0 and later look up the login's workspace id before any model request, so a ChatGPT login needs the credential gateway skill from the same NanoClaw release, which puts that id in the agent's stand-in login. `/update-nanoclaw` refreshes both together; do not refresh this skill alone on an older gateway.
 
-The memory hook goes into the image as a managed hook. `/etc/codex` is root-owned, so the agent cannot change it.
+The memory hook goes into the image as a managed hook, and the requirements file beside it. `/etc/codex` is root-owned, so the agent cannot change either.
 
 ```nc:append to:container/Dockerfile
 # add-codex: Codex runs only managed hooks, and /etc/codex is root-owned.
 COPY agent-runner/src/providers/codex-hooks.json /etc/codex/hooks.json
+```
+
+```nc:append to:container/Dockerfile
+COPY agent-runner/src/providers/codex-requirements.toml /etc/codex/requirements.toml
 ```
 
 ### 4. Build
@@ -147,7 +156,7 @@ pnpm exec tsx scripts/provider-contract-verifier.ts --required-declared codex
 
 The registration tests import only the real barrels — they go red if a barrel line is missing, a barrel fails to evaluate, or the payload is broken.
 
-None of those start the Codex binary. `codex-app-server.smoke.test.ts` does, in the built image and offline: it starts a thread on the pinned app-server and checks that only the image's hook runs. `.github/workflows/codex-smoke.yml` runs it when the pin, the Dockerfile or the runtime changes; its last step is the command to run it locally.
+None of those start the Codex binary. `codex-app-server.smoke.test.ts` does, in the built image and offline: it starts a thread on the pinned app-server and checks that only the image's hook runs and that a web search mode the agent asks for is refused. `.github/workflows/codex-smoke.yml` runs it when the pin, the Dockerfile or the runtime changes; its last step is the command to run it locally.
 
 ## Authenticate
 
