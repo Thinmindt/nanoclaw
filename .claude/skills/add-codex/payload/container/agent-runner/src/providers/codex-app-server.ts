@@ -504,6 +504,16 @@ export function renderCodexConfigToml(plan: CodexConfigPlan): string {
   // memory disabled even if its defaults or a user-level config change.
   lines.push('[features]');
   lines.push(`memories = ${plan.memory.memories}`);
+  // On by default in Codex. Apps and plugins reach OpenAI's connectors and
+  // plugin catalog past the gateway's per-seat rules, and plugins install code
+  // into the container; browser and computer use are reach no seat needs.
+  lines.push('apps = false');
+  lines.push('plugins = false');
+  lines.push('remote_plugin = false');
+  lines.push('browser_use = false');
+  lines.push('browser_use_external = false');
+  lines.push('browser_use_full_cdp_access = false');
+  lines.push('computer_use = false');
   lines.push('');
   lines.push('[memories]');
   lines.push(`use_memories = ${plan.memory.useMemories}`);
