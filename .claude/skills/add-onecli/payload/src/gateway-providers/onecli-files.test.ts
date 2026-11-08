@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { log } from '../log.js';
 import { stageOnecliFile } from './onecli-files.js';
 
 let dir: string;
@@ -97,5 +98,15 @@ describe('persistent OneCLI files', () => {
     expect(() => stageOnecliFile(dir, 'stub', 'sensitive')).toThrow('full');
     expect(fs.readdirSync(path.join(dir, 'onecli'))).toEqual(['.pending-unrelated']);
     expect(fs.readFileSync(unrelated, 'utf8')).toBe('keep');
+  });
+
+  it('keeps a good publish when removing the temporary file fails', () => {
+    const warn = vi.spyOn(log, 'warn').mockImplementation(() => {});
+    vi.spyOn(fs, 'unlinkSync').mockImplementation(() => {
+      throw Object.assign(new Error('denied'), { code: 'EACCES' });
+    });
+    const file = stageOnecliFile(dir, 'ca', 'CA');
+    expect(fs.readFileSync(file, 'utf8')).toBe('CA');
+    expect(warn).toHaveBeenCalledOnce();
   });
 });

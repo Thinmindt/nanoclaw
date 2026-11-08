@@ -2,6 +2,8 @@ import { createHash, randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { log } from '../log.js';
+
 // Keep the SDK's system trust order and its proxy-only fallback.
 const SYSTEM_CA_PATHS = ['/etc/ssl/cert.pem', '/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt'];
 
@@ -97,10 +99,14 @@ export function stageOnecliFile(dataDir: string, kind: 'ca' | 'combined' | 'stub
     if (!validate()) throw new Error(`OneCLI staged file validation failed after publish: ${destination}`);
     return destination;
   } finally {
+    /* eslint-disable no-catch-all/no-catch-all -- a throw here would replace the publish's result or error; a leftover temporary file is harmless */
     try {
       fs.unlinkSync(temporary);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        log.warn('OneCLI temporary file not removed', { path: temporary, err: error });
+      }
     }
+    /* eslint-enable no-catch-all/no-catch-all */
   }
 }
