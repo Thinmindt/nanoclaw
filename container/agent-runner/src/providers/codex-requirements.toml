@@ -1,0 +1,4 @@
+# Installed root-owned at /etc/codex/requirements.toml (container/Dockerfile). Codex falls
+# back to "disabled" whatever web search mode the agent's config.toml asks for; web search
+# comes back only by changing this file and rebuilding the image.
+allowed_web_search_modes = ["disabled"]
