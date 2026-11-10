@@ -1,7 +1,8 @@
 /**
  * The Scout gate through the real a2a route: a message to a gated target
  * (the group named `scout`, or an id in `data/a2a-gate/targets`) is refused
- * on its content and the sender is told once; an answer from a gated group
+ * on its content, or on a line with no approval policy, and the sender is
+ * told once; an answer from a gated group
  * arrives as bounded plain text; every other pair is untouched.
  * Installed by the add-scout-gate skill; goes red if the consult in
  * `src/modules/agent-to-agent/guard.ts` is removed.
@@ -16,10 +17,11 @@ import { createSession } from '../../db/sessions.js';
 import { GuardDenyError } from '../../guard/index.js';
 import { inboundDbPath } from '../../mailbox/sqlite/paths.js';
 import { initSessionFolder } from '../../session-manager.js';
-import type { Session } from '../../types.js';
+import type { PendingApproval, Session } from '../../types.js';
 import { routeAgentMessage } from '../agent-to-agent/agent-route.js';
 import { createDestination } from '../agent-to-agent/db/agent-destinations.js';
 import { setMessagePolicy } from '../agent-to-agent/db/agent-message-policies.js';
+import { applyA2aMessageGate } from '../agent-to-agent/message-gate.js';
 
 vi.mock('../../container-runner.js', () => ({
   wakeContainer: vi.fn().mockResolvedValue(undefined),
@@ -132,10 +134,32 @@ describe('a2a-gate on messages to the scout', () => {
     if (fs.existsSync(TEST_DIR)) fs.rmSync(TEST_DIR, { recursive: true });
   });
 
-  it('lets a clean question through to the scout', async () => {
-    await send(architect, SCOUT, 'Which Bun release first read pnpm workspace globs? Cite the changelog.');
-    expect(inboundTexts(SCOUT, scout.id)).toHaveLength(1);
+  it('refuses a clean question on a line with no approval policy, and tells the sender why', async () => {
+    await expect(send(architect, SCOUT, 'Which Bun release first read pnpm workspace globs?')).rejects.toThrow(
+      GuardDenyError,
+    );
+    expect(inboundTexts(ARCHITECT, architect.id)).toEqual([
+      'Your message to Scout was not sent: no approval policy is set on this line. Ask the owner to add one; rephrasing will not help.',
+    ]);
+  });
+
+  it('refuses an approved message whose policy is gone by the tap, with one readable note', async () => {
+    const notify = vi.fn().mockResolvedValue(undefined);
+    await applyA2aMessageGate({
+      session: architect,
+      payload: { id: 'msg-held', platform_id: SCOUT, content: JSON.stringify({ text: 'a clean question' }) },
+      approval: { approval_id: 'appr-1', action: 'a2a_message_gate', payload: '{}' } as PendingApproval,
+      userId: 'user:owner',
+      notify,
+    });
     expect(inboundTexts(ARCHITECT, architect.id)).toHaveLength(0);
+    expect(notify).toHaveBeenCalledExactlyOnceWith(
+      'Message approved, but not delivered — no longer authorized: a2a-gate: message to Scout refused: no approval policy is set on this line. Ask the owner to add one; rephrasing will not help.',
+    );
+  });
+
+  it('refuses text longer than the approval card shows in full', async () => {
+    await expect(send(architect, SCOUT, `${'x '.repeat(750)}x`)).rejects.toThrow(/refused \(size\)$/);
   });
 
   it('refuses a link, tells the sender once across retries, and keeps the match out of the reason', async () => {
