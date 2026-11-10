@@ -109,6 +109,16 @@ the price of seeing every question and every answer, and the owner can remove a 
 (`ncl policies remove`) if it turns out not to earn it. Answers that pass arrive at the
 Architect as plain text under 8000 characters, with the gate's header line on top.
 
+Any agent given a `scout` destination later gets its policy in the same change:
+
+```bash
+ncl policies set --from <agent-id> --to <scout-id> --approver <owner-user-id>
+```
+
+The gate's content check keys on the target, so a new line is scrubbed without it; the tap is
+per pair, so a new line with no policy reaches the Scout with no card. `ncl policies list` should
+show a row to the Scout for every agent in `ncl destinations list` with a destination to it.
+
 ### 7. Wire a channel, optionally
 
 A Discord channel with the owner as the only sender is useful for checking the Scout works
