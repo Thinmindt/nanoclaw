@@ -21,7 +21,7 @@ because a sender can add labels. No model is consulted. It refuses:
 |------|---------------|
 | fields | any content field besides a string `text` and a list of file names: the target would see a quoted reply, links, or app context that the rules below never read |
 | attachments | any file, whatever its name |
-| size | text over 4000 characters, which is a document, not a question |
+| size | text over 1500 characters, which is a document, not a question, and more than the owner's approval card shows in full |
 | invisible | control, zero-width, bidi, soft-hyphen, and tag-block characters: they split a term so it no longer matches, and the tag block can hide a whole sentence |
 | url, host, ip, email | links with a scheme, `www.`, or a dotted name followed by a path; bare host names on a known ending, also spelled out (`example dot com`, `exfil[.]com`); IPv4/IPv6 addresses; mail addresses |
 | path | absolute, relative with two or more slashes, home-relative, and Windows paths |
@@ -52,14 +52,21 @@ tap, after the content gate has had its say. The `add-scout` skill sets the two 
 Architect ↔ Scout pair, so the owner sees every question going out and every answer coming back
 and nothing is delivered without a tap. A refused message never reaches the card.
 
+The gate makes the tap mandatory on the way in. A message to a gated target on a pair with no
+policy is refused, not delivered, so a line to the Scout cannot open without the owner's card,
+whoever adds it. The sender is told once that no approval policy is set and that rephrasing will
+not help. An approved message whose policy was removed before the tap is refused the same way.
+Answers from the Scout are not affected: a pair from a gated group with no policy still flows.
+
 Known limits of a pattern gate, stated so nobody relies on more than it does: a bare host on an
 ending the list does not know crosses when it carries no path; a secret split into short
 chunks crosses; a private fact in plain words that match no term crosses. Two-letter endings
 that are also file extensions (`sh`, `so`, `in`, `is`, `it`, `me`, `to`) are left out of the
 bare-host list so `build.sh` and `libfoo.so` cross.
 
-One piece: `src/modules/a2a-gate/`, called from two places in the agent-to-agent module: the
-`a2a.send` decision (refuse) and the route that writes to the target's inbox (reduce).
+One piece: `src/modules/a2a-gate/`, called from the agent-to-agent module: twice in the
+`a2a.send` decision (refuse on content, refuse a line with no policy) and once in the route that
+writes to the target's inbox (reduce).
 
 ## Steps
 
@@ -88,18 +95,20 @@ cp .claude/skills/add-scout-gate/resources/a2a-gate/*.ts src/modules/a2a-gate/
   lines (also in full-width letters), the cut at the cap, the header, and that a reduced answer
   passes a second reduction unchanged.
 - `gate.test.ts` drives messages through the real `routeAgentMessage` with a test DB: a clean
-  question reaches the Scout, a link is refused with one note to the sender across retries and
+  question on a line with no policy is refused with one note saying so, an approved message
+  whose policy is gone by the tap is refused with one readable note, text of 1501 characters is
+  refused for size, a link is refused with one note to the sender across retries and
   no matched text in the reason, a private term and a canary are refused, a target listed by id
   is gated whatever its name, a refusal wins over a message policy's hold, missing term files
   refuse everything, the Scout's answer arrives as plain text with its links kept and its
   attachment dropped, an answer from a group listed by id is reduced too, and the Architect →
   Project Manager and Project Manager → Architect pairs pass untouched, attachment included. It
-  goes red if either call in step 2 is removed.
+  goes red if any call in step 2 is removed.
 
 ### 2. Call the gate from the agent-to-agent module
 
-Two calls, both in `src/modules/agent-to-agent/`. First, the refusal: in `guard.ts`, inside
-`a2aSend`'s `decide`, right after `if (isSelf) return ALLOW('self-send');` and before the
+Three calls, all in `src/modules/agent-to-agent/`. First, the content refusal: in `guard.ts`,
+inside `a2aSend`'s `decide`, right after `if (isSelf) return ALLOW('self-send');` and before the
 `getMessagePolicy` lookup, insert:
 
 ```typescript
@@ -112,7 +121,20 @@ Two calls, both in `src/modules/agent-to-agent/`. First, the refusal: in `guard.
 The position matters: the destination and target checks above it still refuse first, and a
 content refusal wins over a policy hold below it.
 
-Second, the reduction: in `agent-route.ts`, at the top of `performAgentRoute`, before
+Second, the refusal of a line with no policy: in the same `decide`, after the `if (policy)`
+block that returns the hold and before `return ALLOW('destination grant exists');`, insert:
+
+```typescript
+    // add-scout-gate skill: a gated target with no policy row is refused, never free flow.
+    const { vetoUnapprovedLine } = await import('../a2a-gate/index.js');
+    const refusal = await vetoUnapprovedLine(input);
+    if (refusal) return DENY(refusal);
+```
+
+Here too the position matters: after the content check, so a message that is refused on its
+content says why, and after the hold, so a pair with a policy is held, not refused.
+
+Third, the reduction: in `agent-route.ts`, at the top of `performAgentRoute`, before
 `resolveTargetSession` is called, insert:
 
 ```typescript
@@ -122,9 +144,30 @@ Second, the reduction: in `agent-route.ts`, at the top of `performAgentRoute`, b
 ```
 
 That function is the one door to the inbox, and an approved replay re-enters through it, so a
-held answer is reduced after the tap like any other. If either block is already present, leave
-it. Nothing is added to `src/modules/index.ts`; the dynamic imports at the call sites are the
-whole wiring.
+held answer is reduced after the tap like any other. If a block is already present, leave it.
+Nothing is added to `src/modules/index.ts`; the dynamic imports at the call sites are the whole
+wiring.
+
+Then correct the three places that say a pair with no policy is free flow:
+
+- `guard.ts`, header comment: replace the line
+
+  ```
+   * row falls through to the structural checks.
+  ```
+
+  with the two lines
+
+  ```
+   * row falls through to the structural checks, except to a target the
+   * add-scout-gate skill gates, where it refuses.
+  ```
+
+- `src/cli/resources/policies.ts`: after "No row = free flow" add ", except to a target the Scout
+  gate guards (add-scout-gate), which refuses the pair"; after "back to free flow" in the
+  `remove` description add "; a line to a Scout-gated target is refused instead".
+- `docs/db-central.md`, section `agent_message_policies`: after "means free flow (no approval
+  required)" add ", except to a target the add-scout-gate skill gates, which refuses the pair".
 
 ### 3. Build and test
 
@@ -193,6 +236,9 @@ is added.
 
 - **Every question to the Scout is refused with "not configured"**: step 4 was not run, or
   `data/a2a-gate/` is not readable by the host's user.
+- **Every clean question on one line is refused with "no approval policy"**: the pair has no
+  policy. `ncl policies set --from <sender-id> --to <scout-id> --approver <owner-user-id>`; `ncl
+  policies list` shows a row to the Scout for each agent with a destination to it.
 - **A legitimate question is refused as `host`**: a file name whose extension is on the ending
   list (`index.app`, `System.IO`) matches. Rephrase without the file name; the Scout does not
   need it.

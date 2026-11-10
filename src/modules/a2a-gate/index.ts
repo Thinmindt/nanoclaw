@@ -1,5 +1,5 @@
 /**
- * a2a-gate module — the content gate on the Architect → Scout pair.
+ * a2a-gate module — the gate on every agent's line to the Scout.
  *
  * `vetoA2aContent` is consulted by the a2a.send decision in
  * `../agent-to-agent/guard.ts` after the structural checks and before the
@@ -30,6 +30,10 @@
  * matched text goes to the sender, who already has it, never to the host
  * log.
  *
+ * `vetoUnapprovedLine` runs after the policy lookup: a message to a gated
+ * target on a pair with no policy row is refused, so every line to the Scout
+ * passes the owner's card.
+ *
  * `sanitizeA2aContent` is the other direction: an answer from a gated group
  * is reduced to bounded plain text (see ./inbound.ts) before it is written
  * to the target's inbox, so the Architect's rule that an answer is data has
@@ -51,8 +55,11 @@ import { parseTermList, scrubForScout, type ScrubHit } from './scrub.js';
 const GATED_NAME = 'scout';
 /** Where the operator keeps the term lists and the targets list. */
 const GATE_DIR = path.join(DATA_DIR, 'a2a-gate');
-/** Longest message text that may cross, in characters. A research question fits; a document does not. */
-const MAX_CHARS = 4000;
+/**
+ * Longest message text that may cross, in characters. A research question fits; a document does not.
+ * The owner's approval card shows this much in full (`GATE_CARD_BODY_MAX` in ../agent-to-agent/agent-route.ts).
+ */
+const MAX_CHARS = 1500;
 
 const EXPLANATIONS: Record<ScrubHit['rule'], string> = {
   fields: 'carries fields other than its text',
@@ -71,12 +78,12 @@ const EXPLANATIONS: Record<ScrubHit['rule'], string> = {
 
 const notified = new Set<string>();
 
-async function tellSender(input: GuardInput, messageId: string, target: string, why: string): Promise<void> {
+async function tellSender(input: GuardInput, messageId: string, note: string): Promise<void> {
   const sessionId = input.actor.kind === 'agent' ? input.actor.sessionId : undefined;
   if (!sessionId || notified.has(messageId)) return;
   const session = await getSession(sessionId);
   if (!session) return;
-  await notifyAgent(session, `Your message to ${target} was not sent: it ${why}. Rephrase without it and send again.`);
+  await notifyAgent(session, note);
   if (notified.size > 1000) notified.clear();
   notified.add(messageId);
 }
@@ -143,6 +150,8 @@ export async function vetoA2aContent(input: GuardInput): Promise<string | null> 
 
   const { gated, name: targetName } = await gatedGroup(to);
   if (!gated) return null;
+  const rephrase = (why: string) =>
+    `Your message to ${targetName} was not sent: it ${why}. Rephrase without it and send again.`;
 
   let privateTerms: string[];
   let canaries: string[];
@@ -152,7 +161,7 @@ export async function vetoA2aContent(input: GuardInput): Promise<string | null> 
     canaries = readList('canaries');
   } catch (err) {
     log.error('a2a-gate: term lists unreadable, refusing every gated message', { dir: GATE_DIR, err });
-    await tellSender(input, messageId, targetName, 'cannot be checked (the gate is not configured on the host)');
+    await tellSender(input, messageId, rephrase('cannot be checked (the gate is not configured on the host)'));
     return `a2a-gate: term lists unreadable under ${GATE_DIR}`;
   }
   /* eslint-enable no-catch-all/no-catch-all */
@@ -171,8 +180,24 @@ export async function vetoA2aContent(input: GuardInput): Promise<string | null> 
       msgId: messageId,
     });
   }
-  await tellSender(input, messageId, targetName, `${EXPLANATIONS[hit.rule]} ("${hit.match}")`);
+  await tellSender(input, messageId, rephrase(`${EXPLANATIONS[hit.rule]} ("${hit.match}")`));
   return `a2a-gate: message to ${targetName} refused (${hit.rule})`;
+}
+
+/**
+ * The a2a.send check for a pair with no message policy, consulted where the
+ * decision would otherwise allow. A gated target is reached only through the
+ * owner's card, so a line to it with no policy is refused, whoever added the
+ * line. Returns the refusal reason, or null when the target is not gated. An
+ * approved replay (a grant) is not noted here: the approval handler already
+ * tells the sender this reason.
+ */
+export async function vetoUnapprovedLine(input: GuardInput): Promise<string | null> {
+  const { gated, name } = await gatedGroup(input.resource?.to ?? '');
+  if (!gated) return null;
+  const why = 'no approval policy is set on this line. Ask the owner to add one; rephrasing will not help.';
+  if (!input.grant) await tellSender(input, String(input.payload.id), `Your message to ${name} was not sent: ${why}`);
+  return `a2a-gate: message to ${name} refused: ${why}`;
 }
 
 /**

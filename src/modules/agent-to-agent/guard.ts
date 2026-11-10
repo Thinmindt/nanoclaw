@@ -15,7 +15,8 @@
  * named approver. The ghost-policy edge (policy row with no destination row)
  * denies — the destination check precedes the policy check, exactly today's
  * outcome. Policy rows can only tighten (hold), never allow: absence of a
- * row falls through to the structural checks.
+ * row falls through to the structural checks, except to a target the
+ * add-scout-gate skill gates, where it refuses.
  */
 import { getAgentGroup } from '../../db/agent-groups.js';
 import { getContainerConfig } from '../../db/container-configs.js';
@@ -87,6 +88,10 @@ export const a2aSend = defineGuardedAction({
     if (policy) {
       return HOLD(`a2a message policy ${from}→${to} holds for ${policy.approver}`, policy.approver);
     }
+    // add-scout-gate skill: a gated target with no policy row is refused, never free flow.
+    const { vetoUnapprovedLine } = await import('../a2a-gate/index.js');
+    const refusal = await vetoUnapprovedLine(input);
+    if (refusal) return DENY(refusal);
     return ALLOW('destination grant exists');
   },
 });

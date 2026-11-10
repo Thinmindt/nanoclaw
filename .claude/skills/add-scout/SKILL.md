@@ -115,8 +115,8 @@ Any agent given a `scout` destination later gets its policy in the same change:
 ncl policies set --from <agent-id> --to <scout-id> --approver <owner-user-id>
 ```
 
-The gate's content check keys on the target, so a new line is scrubbed without it; the tap is
-per pair, so a new line with no policy reaches the Scout with no card. `ncl policies list` should
+The gate keys on the target, so a new line is scrubbed whoever it belongs to; the tap is per
+pair, so until its policy is set the gate refuses every message on the line. `ncl policies list` should
 show a row to the Scout for every agent in `ncl destinations list` with a destination to it.
 
 ### 7. Wire a channel, optionally
