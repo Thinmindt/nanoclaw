@@ -388,7 +388,7 @@ Approve creates the `messaging_group_agents` wiring and replays the triggering e
 
 ### 1.18 `agent_message_policies`
 
-Per-message approval gate on an agent-to-agent connection between two agent groups. No row for a `(from, to)` pair means free flow (no approval required); a row names the `approver` who must sign off on each message.
+Per-message approval gate on an agent-to-agent connection between two agent groups. No row for a `(from, to)` pair means free flow (no approval required), except to a target the add-scout-gate skill gates, which refuses the pair; a row names the `approver` who must sign off on each message.
 
 ```sql
 CREATE TABLE agent_message_policies (

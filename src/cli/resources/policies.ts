@@ -7,7 +7,7 @@ registerResource({
   plural: 'policies',
   table: 'agent_message_policies',
   description:
-    'Agent-to-agent approval policy. A row requires every message from one agent to another to be approved by a human before delivery — without un-wiring the connection. No row = free flow. Directed and per-pair: gate both directions with two policies. Operator-only (agents cannot manage their own gates).',
+    'Agent-to-agent approval policy. A row requires every message from one agent to another to be approved by a human before delivery — without un-wiring the connection. No row = free flow, except to a target the Scout gate guards (add-scout-gate), which refuses the pair. Directed and per-pair: gate both directions with two policies. Operator-only (agents cannot manage their own gates).',
   idColumn: 'from_agent_group_id',
   columns: [
     { name: 'from_agent_group_id', type: 'string', description: 'Source agent group. References agent_groups.id.' },
@@ -42,7 +42,8 @@ registerResource({
     },
     remove: {
       access: 'approval',
-      description: 'Remove an approval policy (back to free flow). Use --from <agent-group-id> --to <agent-group-id>.',
+      description:
+        'Remove an approval policy (back to free flow; a line to a Scout-gated target is refused instead). Use --from <agent-group-id> --to <agent-group-id>.',
       handler: async (args) => {
         const from = args.from as string;
         const to = args.to as string;
