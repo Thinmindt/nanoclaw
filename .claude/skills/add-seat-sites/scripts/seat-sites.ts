@@ -288,7 +288,13 @@ export function tellTheSeat(seat: Seat): string[] {
 
 export const isOwned = (r: Rule): boolean => r.name.startsWith(RULE_PREFIX);
 
-/** Everything that defines the effect of the rules this script does not own, in rule order. */
+/** A list as a set: OneCLI may return a rule's targets or identities in another order. */
+const unordered = (items: unknown[]): string[] => items.map((i) => JSON.stringify(i)).sort();
+
+/**
+ * Everything that defines the effect of the rules this script does not own. Rule order counts;
+ * the order of targets and identities inside a rule does not.
+ */
 export function foreignFingerprint(rules: Rule[]): string {
   return JSON.stringify(
     [...rules]
@@ -301,8 +307,8 @@ export function foreignFingerprint(rules: Rule[]): string {
         r.requireApproval,
         r.rateLimit,
         r.rateLimitWindow,
-        r.identities,
-        r.targets,
+        unordered(r.identities),
+        unordered(r.targets),
       ]),
   );
 }
