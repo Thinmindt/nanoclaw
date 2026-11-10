@@ -10,6 +10,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  foreignFingerprint,
   hostProblem,
   main,
   parseSeats,
@@ -259,6 +260,39 @@ describe('tellTheSeat', () => {
       '- en.wiktionary.org, pages under /wiki/ only',
       '- A 403 is the site refusing; no credential fixes it.',
     ]);
+  });
+});
+
+describe('foreignFingerprint', () => {
+  const privateHosts = (hosts: string[]): Rule => ({
+    name: 'Scout: block private and local hosts (2)',
+    action: 'block',
+    enabled: true,
+    identities: [{ type: 'agent', id: 'gw-scout' }],
+    targets: hosts.map((hostPattern) => ({ kind: 'network', hostPattern })),
+  });
+  const pmBlock: Rule = {
+    name: 'PM: block everything else',
+    action: 'block',
+    enabled: true,
+    identities: [{ type: 'agent', id: 'gw-pm' }],
+    targets: [{ kind: 'network', hostPattern: '*' }],
+  };
+
+  // Regression: OneCLI returned a freshly published rule's targets in another order, and the
+  // post-publish check refused an apply that changed nothing but seat rules.
+  it('regression: a rule whose targets come back reordered has the same fingerprint', () => {
+    const drafted = [privateHosts(['10.*', '192.168.*', '172.22.*']), pmBlock];
+    const republished = [privateHosts(['172.22.*', '10.*', '192.168.*']), pmBlock];
+    expect(foreignFingerprint(republished)).toBe(foreignFingerprint(drafted));
+  });
+
+  it('a changed target, or a changed rule order, changes the fingerprint', () => {
+    const drafted = [privateHosts(['10.*', '192.168.*', '172.22.*']), pmBlock];
+    const changed = [privateHosts(['10.*', '192.168.*', '172.23.*']), pmBlock];
+    expect(foreignFingerprint(changed)).not.toBe(foreignFingerprint(drafted));
+    const reordered = [pmBlock, drafted[0]].map((r, i) => ({ ...r, priority: i }));
+    expect(foreignFingerprint(reordered)).not.toBe(foreignFingerprint(drafted.map((r, i) => ({ ...r, priority: i }))));
   });
 });
 
