@@ -214,7 +214,6 @@ export class ClaudeProvider implements AgentProvider {
   private inference: ReturnType<typeof resolveClaudeInference>;
   private executionPolicy: ReturnType<typeof resolveClaudeExecutionPolicy>;
   private env: Record<string, string | undefined>;
-  private additionalDirectories?: string[];
   private groupDisallowedTools: string[];
   private memorySessionHook?: MemorySessionHookRegistration;
 
@@ -226,7 +225,6 @@ export class ClaudeProvider implements AgentProvider {
   constructor(options: ProviderOptions, configuration: ResolvedRuntimeConfiguration) {
     this.assistantName = options.assistantName;
     this.mcp = configuration.mcpServers as ReturnType<typeof resolveClaudeMcpServers>;
-    this.additionalDirectories = options.additionalDirectories;
     this.groupDisallowedTools = options.disallowedTools ?? [];
     this.inference = configuration.inference as ReturnType<typeof resolveClaudeInference>;
     this.executionPolicy = configuration.executionPolicy as ReturnType<typeof resolveClaudeExecutionPolicy>;
@@ -273,7 +271,6 @@ export class ClaudeProvider implements AgentProvider {
       prompt: stream,
       options: {
         cwd: input.cwd,
-        additionalDirectories: this.additionalDirectories,
         resume: input.continuation,
         pathToClaudeCodeExecutable: '/pnpm/claude',
         // The append (agent name + destinations) is rebuilt at every container
@@ -301,8 +298,21 @@ export class ClaudeProvider implements AgentProvider {
         // Flag-level settings: `fastMode` only when the install turns it on,
         // then the execution policy's fixed keys, spread last so per-group
         // input can never override them. Both are Settings members rather
-        // than query options, which is why they ride `settings`.
-        settings: { ...this.inference.settings, ...this.executionPolicy.settings },
+        // than query options, which is why they ride `settings`. The memory
+        // hook rides here too, so no settings file carries it: an in-process
+        // SessionStart callback is not called for `startup` at this SDK.
+        settings: {
+          ...this.inference.settings,
+          ...this.executionPolicy.settings,
+          hooks: {
+            SessionStart: [
+              {
+                matcher: this.memorySessionHook.sources.join('|'),
+                hooks: [{ type: 'command', command: this.memorySessionHook.command, timeout: 10 }],
+              },
+            ],
+          },
+        },
         mcpServers: this.mcp.mcpServers,
         hooks: {
           PreToolUse: [{ hooks: [preToolUseHook] }],

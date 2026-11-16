@@ -141,8 +141,8 @@ export function resolveClaudeMcpServers(
 /**
  * NanoClaw owns persistent memory across providers: the session hook injects
  * the shared memory tree, and the SDK's own auto-memory stays disabled so the
- * two never diverge. The hook itself is file-carried (settings.json); this is
- * the runtime half of the same capability.
+ * two never diverge. The hook itself is an in-process SessionStart callback
+ * (providers/claude.ts); this is the runtime half of the same capability.
  */
 export function resolveClaudeMemoryRuntime(): { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' } {
   return { CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' };

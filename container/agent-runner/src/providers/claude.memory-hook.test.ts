@@ -1,18 +1,35 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+/**
+ * The memory hook rides the SDK's flag-level settings: the runner writes no
+ * Claude settings file. That its context reaches a real session at startup,
+ * compaction and clear is claude.smoke.test.ts.
+ */
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
-import { MEMORY_SESSION_HOOK } from '../memory/session-hook.js';
-import './index.js';
-import '../provider-contracts/index.js';
-import { registerProviderMemorySessionHook } from '../provider-contracts/realize.js';
-import { createProvider } from './factory.js';
+const calls: Array<{ settings: { hooks: unknown } }> = [];
+
+mock.module('@anthropic-ai/claude-agent-sdk', () => ({
+  query: ({ options }: { options: (typeof calls)[number] }) => {
+    calls.push(options);
+    return (async function* () {
+      yield { type: 'result', subtype: 'success', result: 'ok' };
+    })();
+  },
+}));
+
+const { MEMORY_SESSION_HOOK } = await import('../memory/session-hook.js');
+await import('./index.js');
+await import('../provider-contracts/index.js');
+const { registerProviderMemorySessionHook } = await import('../provider-contracts/realize.js');
+const { createProvider } = await import('./factory.js');
 
 let configDir: string;
 let previousConfigDir: string | undefined;
 
 beforeEach(() => {
+  calls.length = 0;
   configDir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-memory-hook-'));
   previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
   process.env.CLAUDE_CONFIG_DIR = configDir;
@@ -24,57 +41,20 @@ afterEach(() => {
   fs.rmSync(configDir, { recursive: true, force: true });
 });
 
-describe('Claude memory SessionStart registration', () => {
-  it('writes the shared command once without disturbing other hooks', () => {
-    const settingsFile = path.join(configDir, 'settings.json');
-    fs.writeFileSync(
-      settingsFile,
-      JSON.stringify({
-        customValue: 'preserved',
-        hooks: {
-          Stop: [{ hooks: [{ type: 'command', command: 'custom-stop' }] }],
-          SessionStart: [
-            { matcher: 'resume', hooks: [{ type: 'command', command: 'custom-resume' }] },
-            {
-              matcher: '.*',
-              hooks: [
-                { type: 'command', command: 'bun /app/src/memory-hook.ts' },
-                { type: 'command', command: 'custom-start' },
-              ],
-            },
-          ],
+describe('Claude memory SessionStart hook', () => {
+  it('rides the flag-level settings and writes no settings file', () => {
+    const provider = createProvider('claude');
+    registerProviderMemorySessionHook('claude', provider, MEMORY_SESSION_HOOK);
+    provider.query({ prompt: 'hi', cwd: '/workspace/agent' });
+
+    expect(fs.readdirSync(configDir)).toEqual([]);
+    expect(calls[0].settings.hooks).toEqual({
+      SessionStart: [
+        {
+          matcher: 'startup|clear|compact',
+          hooks: [{ type: 'command', command: 'bun /app/src/memory/hook.ts', timeout: 10 }],
         },
-      }),
-    );
-
-    const provider = createProvider('claude');
-    registerProviderMemorySessionHook('claude', provider, MEMORY_SESSION_HOOK);
-    registerProviderMemorySessionHook('claude', provider, MEMORY_SESSION_HOOK);
-
-    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
-    expect(settings.outputStyle).toBe('default');
-    expect(settings.customValue).toBe('preserved');
-    expect(settings.hooks.Stop).toEqual([{ hooks: [{ type: 'command', command: 'custom-stop' }] }]);
-    expect(settings.hooks.SessionStart).toEqual([
-      { matcher: 'resume', hooks: [{ type: 'command', command: 'custom-resume' }] },
-      { matcher: '.*', hooks: [{ type: 'command', command: 'custom-start' }] },
-      {
-        matcher: 'startup|clear|compact',
-        hooks: [{ type: 'command', command: 'bun /app/src/memory/hook.ts', timeout: 10 }],
-      },
-    ]);
-  });
-
-  it.each([undefined, 'Explanatory', 'My chat style'])('seeds tone without replacing %j', (outputStyle) => {
-    const settingsFile = path.join(configDir, 'settings.json');
-    if (outputStyle !== undefined) fs.writeFileSync(settingsFile, JSON.stringify({ outputStyle }));
-    const provider = createProvider('claude');
-    registerProviderMemorySessionHook('claude', provider, MEMORY_SESSION_HOOK);
-    expect(JSON.parse(fs.readFileSync(settingsFile, 'utf-8')).outputStyle).toBe(outputStyle ?? 'default');
-
-    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
-    fs.writeFileSync(settingsFile, JSON.stringify({ ...settings, outputStyle: 'Learning' }));
-    registerProviderMemorySessionHook('claude', provider, MEMORY_SESSION_HOOK);
-    expect(JSON.parse(fs.readFileSync(settingsFile, 'utf-8')).outputStyle).toBe('Learning');
+      ],
+    });
   });
 });

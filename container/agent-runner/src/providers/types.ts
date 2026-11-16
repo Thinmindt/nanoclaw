@@ -75,7 +75,6 @@ export interface ProviderOptions {
   assistantName?: string;
   mcpServers?: Record<string, McpServerConfig>;
   env?: Record<string, string | undefined>;
-  additionalDirectories?: string[];
   /**
    * Model alias (`sonnet`, `opus`, `haiku`) or full model ID. Passed through
    * to the underlying SDK. If omitted, the SDK default is used.
