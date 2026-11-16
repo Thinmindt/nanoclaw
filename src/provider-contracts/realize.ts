@@ -209,8 +209,8 @@ function initializeFile(
       initialized.push(file.relativePath);
       return;
     }
-    // Reconciliation runs at the moment the file is prepared, so the prepare
-    // variant is the only schedule there is.
+    // Only a create-if-missing file is reconciled (the contract check allows
+    // nothing else), and it carries the template a healed file is replaced by.
     if (file.reconcile === undefined || file.prepare.operation !== 'create-if-missing') return;
     const transformerProvider = file.reconcile.transformerProvider ?? provider;
     const transformer = providerFileTransformer(file.reconcile.transformer);
@@ -223,7 +223,6 @@ function initializeFile(
         // template takes its place, so the seat recovers with no operator.
         moveAside(dir, name, agentGroupId, `${volume.directory}-${file.relativePath}`, filePath, result.reason);
         dir.writeNewFile(name, Buffer.from(file.prepare.content));
-        initialized.push(`${file.relativePath} (replaced by the template)`);
         return;
       }
       emitDiagnostics(result.diagnostics);
@@ -241,29 +240,44 @@ function initializeFile(
 
 /**
  * A project settings file in the group folder is left absent or a regular
- * file holding a JSON object. Anything else is moved aside and not replaced.
+ * file holding a JSON object. Anything else, or a folder on its path that is
+ * not a real directory, is moved aside and not replaced.
  */
 function healProjectSettingsFile(groupDir: string, relativePath: string, agentGroupId: string): void {
   const segments = relativePath.split('/');
   const name = segments.pop()!;
   const filePath = path.join(groupDir, relativePath);
-  let dir: AnchoredDir | null = null;
+  const label = `group-${relativePath.replaceAll('/', '-')}`;
+  let dir = AnchoredDir.open(groupDir, []);
   try {
-    dir = AnchoredDir.open(groupDir, segments);
-    if (!dir) return;
-    let stat: fs.Stats;
-    try {
-      stat = dir.lstat(name);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
-      throw err;
+    for (const segment of segments) {
+      const entry = dir && lstatIfPresent(dir, segment);
+      if (!dir || !entry) return;
+      if (!entry.isDirectory()) {
+        moveAside(dir, segment, agentGroupId, label, filePath, `${segment} is not a real directory`);
+        return;
+      }
+      const child = dir.openDir(segment);
+      dir.close();
+      dir = child;
     }
+    const stat = dir && lstatIfPresent(dir, name);
+    if (!dir || !stat) return;
     const reason = stat.isFile() ? invalidJsonObjectReason(dir.readFile(name).toString('utf-8')) : 'not a regular file';
-    if (reason) moveAside(dir, name, agentGroupId, `group-${relativePath.replaceAll('/', '-')}`, filePath, reason);
+    if (reason) moveAside(dir, name, agentGroupId, label, filePath, reason);
   } catch (err) {
     log.warn('Project settings file not checked', { path: filePath, err });
   } finally {
     dir?.close();
+  }
+}
+
+function lstatIfPresent(dir: AnchoredDir, name: string): fs.Stats | undefined {
+  try {
+    return dir.lstat(name);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw err;
   }
 }
 

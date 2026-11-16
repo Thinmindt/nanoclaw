@@ -166,6 +166,8 @@ describe('initGroupFilesystem agent surfaces', () => {
     expect(settings.autoMemoryEnabled).toBe(false);
     expect(settings.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
     expect(settings.hooks.SessionStart).toBeUndefined();
+    // A group with no project settings folder is the common case: nothing to report.
+    expect(log.warn).not.toHaveBeenCalled();
   });
 
   it('disables native Claude memory in existing settings without clobbering other values', async () => {
@@ -248,25 +250,43 @@ describe('initGroupFilesystem agent surfaces', () => {
       );
     });
 
-    it.each(['settings.json', 'settings.local.json'])(
-      'moves an unusable project %s aside and writes nothing in its place',
-      async (name) => {
-        const ag = group(`ag-project-${name}`, `project-${name}`);
-        await createAgentGroup(ag);
-        const projectFile = path.join(GROUPS_DIR, ag.folder, '.claude', name);
-        fs.mkdirSync(path.dirname(projectFile), { recursive: true });
-        fs.writeFileSync(projectFile, '{"hooks":');
+    it.each(
+      ['settings.json', 'settings.local.json'].flatMap((name) => Object.keys(plant).map((label) => [name, label])),
+    )('moves an unusable project %s aside and writes nothing in its place: %s', async (name, label) => {
+      const id = `${name}-${label}`.replaceAll(/[^a-z0-9]+/gi, '-');
+      const ag = group(`ag-project-${id}`, `project-${id}`);
+      await createAgentGroup(ag);
+      const projectFile = path.join(GROUPS_DIR, ag.folder, '.claude', name);
+      fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+      fs.writeFileSync(path.join(TEST_ROOT, 'host-settings.json'), 'host');
+      plant[label](projectFile);
 
-        await initGroupFilesystem(ag);
+      await initGroupFilesystem(ag);
 
-        expect(fs.existsSync(projectFile)).toBe(false);
-        expect(fs.readdirSync(quarantine(ag.id))).toHaveLength(1);
-        expect(log.warn).toHaveBeenCalledWith(
-          'Settings file moved aside',
-          expect.objectContaining({ path: projectFile }),
-        );
-      },
-    );
+      expect(fs.lstatSync(projectFile, { throwIfNoEntry: false })).toBeUndefined();
+      expect(fs.readFileSync(path.join(TEST_ROOT, 'host-settings.json'), 'utf-8')).toBe('host');
+      expect(fs.readdirSync(quarantine(ag.id))).toHaveLength(1);
+      expect(log.warn).toHaveBeenCalledWith(
+        'Settings file moved aside',
+        expect.objectContaining({ path: projectFile }),
+      );
+    });
+
+    it('moves a project settings folder that is not a real directory aside, never following it', async () => {
+      const ag = group('ag-project-link', 'project-link');
+      await createAgentGroup(ag);
+      const elsewhere = path.join(TEST_ROOT, 'elsewhere');
+      fs.mkdirSync(elsewhere, { recursive: true });
+      fs.writeFileSync(path.join(elsewhere, 'settings.json'), '{"hooks":');
+      fs.mkdirSync(path.join(GROUPS_DIR, ag.folder), { recursive: true });
+      fs.symlinkSync(elsewhere, path.join(GROUPS_DIR, ag.folder, '.claude'));
+
+      await initGroupFilesystem(ag);
+
+      expect(fs.lstatSync(path.join(GROUPS_DIR, ag.folder, '.claude'), { throwIfNoEntry: false })).toBeUndefined();
+      expect(fs.readFileSync(path.join(elsewhere, 'settings.json'), 'utf-8')).toBe('{"hooks":');
+      expect(fs.readdirSync(quarantine(ag.id))).toHaveLength(1);
+    });
 
     it('leaves a project settings file holding a JSON object in place', async () => {
       const ag = group('ag-project-valid', 'project-valid');

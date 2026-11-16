@@ -6,8 +6,8 @@ import type { ProviderFileDiagnostic, ProviderFileTransformer } from './provider
 
 const CLAUDE_SETTINGS_FILE = 'settings.json';
 const PRE_COMPACT_COMMAND = 'bun /app/src/compact-instructions.ts';
-// The runner now supplies memory through an in-process callback, so a command
-// entry for either script would inject it a second time.
+// The runner now passes the memory hook in the SDK's flag-level settings, so a
+// command entry for either script in this file would inject memory a second time.
 const MEMORY_SESSION_START_COMMANDS = new Set(['bun /app/src/memory/hook.ts', 'bun /app/src/memory-hook.ts']);
 // Extra mounts are no longer added directories, so the switch that loads
 // instruction files from them has nothing to do and is removed.

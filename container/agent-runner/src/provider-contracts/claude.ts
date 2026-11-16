@@ -11,8 +11,8 @@ import { PROVIDER_RUNTIME_CONTRACT_SEAM_VERSION, type ProviderRuntimeContract } 
 
 const provider = 'claude';
 
-// The runner reads and writes no Claude settings file: the memory hook is an
-// in-process callback (providers/claude.ts) and the host seeds the file.
+// The runner reads and writes no Claude settings file: the memory hook rides
+// the SDK's flag-level settings (providers/claude.ts) and the host seeds the file.
 export const claudeRuntimeContract: ProviderRuntimeContract = {
   seamVersion: PROVIDER_RUNTIME_CONTRACT_SEAM_VERSION,
   configuration: {

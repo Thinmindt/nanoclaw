@@ -106,8 +106,11 @@ function write(file: string, content: string): void {
   fs.writeFileSync(file, content);
 }
 
-/** An instruction file, skill, command and subagent at `dir`, each carrying `MARKER_<tag>_<KIND>`. */
-function plantFour(dir: string, tag: string): Record<string, string> {
+/**
+ * An instruction file, skill, command and subagent at `dir`, each carrying
+ * `MARKER_<tag>_<KIND>`, as Write tool calls: a seat plants them itself.
+ */
+function fourPlants(dir: string, tag: string) {
   const markers = {
     instruction: `MARKER_${tag}_INSTRUCTION`,
     skill: `MARKER_${tag}_SKILL`,
@@ -115,34 +118,38 @@ function plantFour(dir: string, tag: string): Record<string, string> {
     subagent: `MARKER_${tag}_SUBAGENT`,
   };
   const lower = tag.toLowerCase();
-  write(path.join(dir, 'CLAUDE.md'), `${markers.instruction}\n`);
-  write(
-    path.join(dir, '.claude', 'skills', `${lower}-skill`, 'SKILL.md'),
-    `---\nname: ${lower}-skill\ndescription: ${markers.skill}\n---\n\nBody.\n`,
-  );
-  write(
-    path.join(dir, '.claude', 'commands', `${lower}-command.md`),
-    `---\ndescription: ${markers.command}\n---\n\nBody.\n`,
-  );
-  write(
-    path.join(dir, '.claude', 'agents', `${lower}-agent.md`),
-    `---\nname: ${lower}-agent\ndescription: ${markers.subagent}\n---\n\nBody.\n`,
-  );
-  return markers;
+  const files = [
+    [path.join(dir, 'CLAUDE.md'), `${markers.instruction}\n`],
+    [
+      path.join(dir, '.claude', 'skills', `${lower}-skill`, 'SKILL.md'),
+      `---\nname: ${lower}-skill\ndescription: ${markers.skill}\n---\n\nBody.\n`,
+    ],
+    [
+      path.join(dir, '.claude', 'commands', `${lower}-command.md`),
+      `---\ndescription: ${markers.command}\n---\n\nBody.\n`,
+    ],
+    [
+      path.join(dir, '.claude', 'agents', `${lower}-agent.md`),
+      `---\nname: ${lower}-agent\ndescription: ${markers.subagent}\n---\n\nBody.\n`,
+    ],
+  ];
+  const writes = files.map(([file_path, content]) => ({ name: 'Write', input: { file_path, content } }));
+  return { markers, writes };
 }
 
-const top = plantFour(mount, 'TOP');
-const down = plantFour(path.join(mount, 'sub'), 'DOWN');
+const top = fourPlants(mount, 'TOP');
+const down = fourPlants(path.join(mount, 'sub'), 'DOWN');
 write(path.join(mount, 'data.txt'), 'before\n');
 write(path.join(mount, 'sub', 'data.txt'), 'down\n');
 // Control (ii): loading on touch below the working directory.
 const nested = { instruction: 'MARKER_NESTED_INSTRUCTION', skill: 'MARKER_NESTED_SKILL' };
+const BESIDE = 'BESIDE_FILE_CONTENT';
 write(path.join(cwd, 'nested', 'CLAUDE.md'), `${nested.instruction}\n`);
 write(
   path.join(cwd, 'nested', '.claude', 'skills', 'nested-skill', 'SKILL.md'),
   `---\nname: nested-skill\ndescription: ${nested.skill}\n---\n\nBody.\n`,
 );
-write(path.join(cwd, 'nested', 'beside.txt'), 'beside\n');
+write(path.join(cwd, 'nested', 'beside.txt'), `${BESIDE}\n`);
 write(path.join(cwd, 'memory', 'index.md'), `# Memory Index\n\n${MEMORY_MARKER}\n`);
 write(path.join(cwd, 'memory', 'system', 'definition.md'), '# Definition\n');
 
@@ -171,13 +178,18 @@ const SEAT_SETTINGS = JSON.stringify({
   env: { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' },
 });
 
+/** A seat's home: its own Claude config folder. */
+function newSeat(settings = SEAT_SETTINGS): string {
+  const home = fs.mkdtempSync(path.join(root, 'seat-'));
+  fs.writeFileSync(path.join(home, 'settings.json'), settings);
+  return home;
+}
+
 async function session(
   prompts: string[],
   steps: typeof script,
-  settings = SEAT_SETTINGS,
+  home = newSeat(),
 ): Promise<{ requests: string[]; results: Array<{ isError?: boolean }> }> {
-  const home = fs.mkdtempSync(path.join(root, 'seat-'));
-  fs.writeFileSync(path.join(home, 'settings.json'), settings);
   requests = [];
   script = steps;
   const provider = createProvider('claude', {
@@ -216,20 +228,36 @@ const requestFor = (bodies: string[], prompt: string) => bodies.find((b) => b.in
 
 (process.env.CLAUDE_SMOKE ? describe : describe.skip)('pinned Claude CLI through the runner', () => {
   it('loads nothing from an extra mount; files there are still read, edited and written (3a)', async () => {
-    for (const seat of ['another seat', 'the planting seat, next session']) {
-      const { requests: bodies, results } = await session(['LAUNCH'], touchScript);
-      expect(results[0].isError).toBeFalsy();
+    // The planting seat writes the eight plants with its own Write tool.
+    const planter = newSeat();
+    const planted = await session(['PLANT'], [...top.writes, ...down.writes], planter);
+    expect(planted.results[0].isError).toBeFalsy();
+    expect(fs.readFileSync(path.join(mount, 'CLAUDE.md'), 'utf-8')).toBe(`${top.markers.instruction}\n`);
 
-      // (ii) the touch control: loading on touch is visible to this reading.
-      expect(loaded(bodies, nested.instruction)).toBe(true);
-      expect(loaded(bodies, nested.skill)).toBe(true);
-      // (i) the launch control, or (iii) with the change: the four at the top.
-      for (const [kind, marker] of Object.entries(top)) {
-        expect([seat, kind, loaded(bodies.slice(0, 1), marker)]).toEqual([seat, kind, control]);
-        if (!control) expect([seat, kind, loaded(bodies, marker)]).toEqual([seat, kind, false]);
+    for (const [seat, home] of [
+      ['another seat', newSeat()],
+      ['the planting seat, next session', planter],
+    ]) {
+      const { requests: bodies, results } = await session(['LAUNCH'], touchScript, home);
+      expect(results[0].isError).toBeFalsy();
+      const launch = requestFor(bodies, 'LAUNCH');
+      const afterTouch = bodies.slice(bodies.indexOf(requestFor(bodies, BESIDE)));
+
+      // (ii) the touch control: absent at launch, loaded once the session reads beside them.
+      for (const marker of Object.values(nested)) {
+        expect([seat, marker, loaded([launch], marker), loaded(afterTouch, marker)]).toEqual([
+          seat,
+          marker,
+          false,
+          true,
+        ]);
+      }
+      // (i) the control loads the four at the top at launch; (iii) with the change, no request carries them.
+      for (const [kind, marker] of Object.entries(top.markers)) {
+        expect([seat, kind, loaded(control ? [launch] : bodies, marker)]).toEqual([seat, kind, control]);
       }
       // (iv) one folder down: recorded under the control, none loaded with the change.
-      for (const [kind, marker] of Object.entries(down)) {
+      for (const [kind, marker] of Object.entries(down.markers)) {
         if (control) console.log(`control, one folder down, ${kind}: loaded=${loaded(bodies, marker)}`);
         else expect([seat, kind, loaded(bodies, marker)]).toEqual([seat, kind, false]);
       }
@@ -252,7 +280,7 @@ const requestFor = (bodies: string[], prompt: string) => bodies.find((b) => b.in
   }, 180_000);
 
   it('completes a turn with a corrupt user settings file (criterion 2)', async () => {
-    const { results } = await session(['CORRUPT'], [], '{"hooks":');
+    const { results } = await session(['CORRUPT'], [], newSeat('{"hooks":'));
     expect(results[0].isError).toBeFalsy();
   }, 120_000);
 });
