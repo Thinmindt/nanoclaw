@@ -1,0 +1,258 @@
+/**
+ * The pinned Claude CLI, driven through the runner's own SDK call in bypass
+ * mode, against a stub model on loopback that records every request. A marker
+ * counts as "loaded" when its text appears in a request the CLI sends to the
+ * model; the controls use the same reading.
+ *
+ * Runs only inside the agent image, with CLAUDE_SMOKE=1 and no network.
+ * CLAUDE_SMOKE_CONTROL=1 runs the same file against a runner from before the
+ * change, which still hands extra mounts to the CLI as added directories.
+ */
+import { describe, expect, it } from 'bun:test';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+import { MEMORY_SESSION_HOOK } from '../memory/session-hook.js';
+import '../provider-contracts/index.js';
+import { registerProviderMemorySessionHook } from '../provider-contracts/realize.js';
+import { createProvider } from './factory.js';
+import './index.js';
+
+const control = process.env.CLAUDE_SMOKE_CONTROL === '1';
+const cwd = '/workspace/agent';
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-smoke-'));
+const mount = path.join(root, 'extra', 'shared');
+const MEMORY_MARKER = 'MARKER_MEMORY_CONTEXT';
+
+// ── the stub model ──
+
+type Body = { messages?: Array<{ role: string; content: unknown }>; tools?: Array<{ name: string }> };
+type Block = { type: 'text'; text: string } | { type: 'tool_use'; id: string; name: string; input: unknown };
+
+let requests: string[] = [];
+let script: Array<{ name: string; input: unknown }> = [];
+
+function sse(blocks: Block[], stopReason: string): string {
+  const events: unknown[] = [
+    {
+      type: 'message_start',
+      message: {
+        id: 'msg_stub',
+        type: 'message',
+        role: 'assistant',
+        model: 'claude-stub',
+        content: [],
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    },
+  ];
+  blocks.forEach((block, index) => {
+    if (block.type === 'text') {
+      events.push({ type: 'content_block_start', index, content_block: { type: 'text', text: '' } });
+      events.push({ type: 'content_block_delta', index, delta: { type: 'text_delta', text: block.text } });
+    } else {
+      events.push({ type: 'content_block_start', index, content_block: { ...block, input: {} } });
+      events.push({
+        type: 'content_block_delta',
+        index,
+        delta: { type: 'input_json_delta', partial_json: JSON.stringify(block.input) },
+      });
+    }
+    events.push({ type: 'content_block_stop', index });
+  });
+  events.push({
+    type: 'message_delta',
+    delta: { stop_reason: stopReason, stop_sequence: null },
+    usage: { output_tokens: 1 },
+  });
+  events.push({ type: 'message_stop' });
+  return events.map((e) => `event: ${(e as { type: string }).type}\ndata: ${JSON.stringify(e)}\n\n`).join('');
+}
+
+/** The next scripted tool call is chosen by how many tool calls the conversation already holds. */
+function reply(body: Body): Response {
+  const toolCalls = (body.messages ?? [])
+    .filter((m) => m.role === 'assistant' && Array.isArray(m.content))
+    .flatMap((m) => m.content as Array<{ type: string }>)
+    .filter((b) => b.type === 'tool_use').length;
+  const main = body.tools?.some((t) => t.name === 'Read');
+  const step = main ? script[toolCalls] : undefined;
+  const blocks: Block[] = step
+    ? [{ type: 'tool_use', id: `toolu_${toolCalls}`, name: step.name, input: step.input }]
+    : [{ type: 'text', text: 'done' }];
+  return new Response(sse(blocks, step ? 'tool_use' : 'end_turn'), {
+    headers: { 'content-type': 'text/event-stream' },
+  });
+}
+
+const server = Bun.serve({
+  hostname: '127.0.0.1',
+  port: 0,
+  async fetch(request) {
+    if (new URL(request.url).pathname !== '/v1/messages') return Response.json({});
+    const text = await request.text();
+    requests.push(text);
+    return reply(JSON.parse(text) as Body);
+  },
+});
+
+// ── the plants ──
+
+function write(file: string, content: string): void {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content);
+}
+
+/** An instruction file, skill, command and subagent at `dir`, each carrying `MARKER_<tag>_<KIND>`. */
+function plantFour(dir: string, tag: string): Record<string, string> {
+  const markers = {
+    instruction: `MARKER_${tag}_INSTRUCTION`,
+    skill: `MARKER_${tag}_SKILL`,
+    command: `MARKER_${tag}_COMMAND`,
+    subagent: `MARKER_${tag}_SUBAGENT`,
+  };
+  const lower = tag.toLowerCase();
+  write(path.join(dir, 'CLAUDE.md'), `${markers.instruction}\n`);
+  write(
+    path.join(dir, '.claude', 'skills', `${lower}-skill`, 'SKILL.md'),
+    `---\nname: ${lower}-skill\ndescription: ${markers.skill}\n---\n\nBody.\n`,
+  );
+  write(
+    path.join(dir, '.claude', 'commands', `${lower}-command.md`),
+    `---\ndescription: ${markers.command}\n---\n\nBody.\n`,
+  );
+  write(
+    path.join(dir, '.claude', 'agents', `${lower}-agent.md`),
+    `---\nname: ${lower}-agent\ndescription: ${markers.subagent}\n---\n\nBody.\n`,
+  );
+  return markers;
+}
+
+const top = plantFour(mount, 'TOP');
+const down = plantFour(path.join(mount, 'sub'), 'DOWN');
+write(path.join(mount, 'data.txt'), 'before\n');
+write(path.join(mount, 'sub', 'data.txt'), 'down\n');
+// Control (ii): loading on touch below the working directory.
+const nested = { instruction: 'MARKER_NESTED_INSTRUCTION', skill: 'MARKER_NESTED_SKILL' };
+write(path.join(cwd, 'nested', 'CLAUDE.md'), `${nested.instruction}\n`);
+write(
+  path.join(cwd, 'nested', '.claude', 'skills', 'nested-skill', 'SKILL.md'),
+  `---\nname: nested-skill\ndescription: ${nested.skill}\n---\n\nBody.\n`,
+);
+write(path.join(cwd, 'nested', 'beside.txt'), 'beside\n');
+write(path.join(cwd, 'memory', 'index.md'), `# Memory Index\n\n${MEMORY_MARKER}\n`);
+write(path.join(cwd, 'memory', 'system', 'definition.md'), '# Definition\n');
+
+// The session touches the nested folder, then reads, edits and writes in the
+// mount and one folder down with the file tools, and views and writes with the shell.
+const touchScript = [
+  { name: 'Read', input: { file_path: path.join(cwd, 'nested', 'beside.txt') } },
+  { name: 'Read', input: { file_path: path.join(mount, 'data.txt') } },
+  { name: 'Edit', input: { file_path: path.join(mount, 'data.txt'), old_string: 'before', new_string: 'edited' } },
+  { name: 'Write', input: { file_path: path.join(mount, 'written.txt'), content: 'written\n' } },
+  { name: 'Read', input: { file_path: path.join(mount, 'sub', 'data.txt') } },
+  {
+    name: 'Bash',
+    input: {
+      command: `cat ${mount}/data.txt ${mount}/sub/data.txt && echo shell > ${mount}/shell.txt`,
+      description: 'view',
+    },
+  },
+];
+
+// ── one session ──
+
+/** Settings as a seat had them before the change: the added-directory instruction switch on. */
+const SEAT_SETTINGS = JSON.stringify({
+  autoMemoryEnabled: false,
+  env: { CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1', CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' },
+});
+
+async function session(
+  prompts: string[],
+  steps: typeof script,
+  settings = SEAT_SETTINGS,
+): Promise<{ requests: string[]; results: Array<{ isError?: boolean }> }> {
+  const home = fs.mkdtempSync(path.join(root, 'seat-'));
+  fs.writeFileSync(path.join(home, 'settings.json'), settings);
+  requests = [];
+  script = steps;
+  const provider = createProvider('claude', {
+    env: {
+      ...process.env,
+      CLAUDE_CONFIG_DIR: home,
+      ANTHROPIC_BASE_URL: `http://127.0.0.1:${server.port}`,
+      ANTHROPIC_API_KEY: 'stub',
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
+    },
+    // Read only by the runner from before the change.
+    ...({ additionalDirectories: [mount] } as object),
+  });
+  const previousHome = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = home;
+  registerProviderMemorySessionHook('claude', provider, MEMORY_SESSION_HOOK);
+  process.env.CLAUDE_CONFIG_DIR = previousHome;
+
+  const query = provider.query({ prompt: prompts[0], cwd });
+  const results: Array<{ isError?: boolean }> = [];
+  for await (const event of query.events) {
+    if (event.type !== 'result') continue;
+    results.push(event);
+    if (results.length === prompts.length) break;
+    query.push(prompts[results.length]);
+  }
+  query.end();
+  query.abort();
+  return { requests: [...requests], results };
+}
+
+const loaded = (bodies: string[], marker: string) => bodies.some((b) => b.includes(marker));
+const occurrences = (body: string, marker: string) => body.split(marker).length - 1;
+/** The first request carrying `prompt` as user text. */
+const requestFor = (bodies: string[], prompt: string) => bodies.find((b) => b.includes(prompt))!;
+
+(process.env.CLAUDE_SMOKE ? describe : describe.skip)('pinned Claude CLI through the runner', () => {
+  it('loads nothing from an extra mount; files there are still read, edited and written (3a)', async () => {
+    for (const seat of ['another seat', 'the planting seat, next session']) {
+      const { requests: bodies, results } = await session(['LAUNCH'], touchScript);
+      expect(results[0].isError).toBeFalsy();
+
+      // (ii) the touch control: loading on touch is visible to this reading.
+      expect(loaded(bodies, nested.instruction)).toBe(true);
+      expect(loaded(bodies, nested.skill)).toBe(true);
+      // (i) the launch control, or (iii) with the change: the four at the top.
+      for (const [kind, marker] of Object.entries(top)) {
+        expect([seat, kind, loaded(bodies.slice(0, 1), marker)]).toEqual([seat, kind, control]);
+        if (!control) expect([seat, kind, loaded(bodies, marker)]).toEqual([seat, kind, false]);
+      }
+      // (iv) one folder down: recorded under the control, none loaded with the change.
+      for (const [kind, marker] of Object.entries(down)) {
+        if (control) console.log(`control, one folder down, ${kind}: loaded=${loaded(bodies, marker)}`);
+        else expect([seat, kind, loaded(bodies, marker)]).toEqual([seat, kind, false]);
+      }
+      // (v) the file tools and the shell reached the mount with no denial.
+      expect(bodies.some((b) => b.includes('"is_error":true'))).toBe(false);
+      expect(fs.readFileSync(path.join(mount, 'data.txt'), 'utf-8')).toBe('edited\n');
+      expect(fs.readFileSync(path.join(mount, 'written.txt'), 'utf-8')).toBe('written\n');
+      expect(fs.readFileSync(path.join(mount, 'shell.txt'), 'utf-8')).toBe('shell\n');
+      expect(loaded(bodies, 'down\\n')).toBe(true);
+      fs.writeFileSync(path.join(mount, 'data.txt'), 'before\n');
+    }
+  }, 180_000);
+
+  it('brings memory context once at startup, after compaction and after clear (criterion 1)', async () => {
+    const prompts = ['FIRST_PROMPT', '/compact', 'AFTER_COMPACT', '/clear', 'AFTER_CLEAR'];
+    const { requests: bodies } = await session(prompts, []);
+    for (const prompt of ['FIRST_PROMPT', 'AFTER_COMPACT', 'AFTER_CLEAR']) {
+      expect([prompt, occurrences(requestFor(bodies, prompt), MEMORY_MARKER)]).toEqual([prompt, 1]);
+    }
+  }, 180_000);
+
+  it('completes a turn with a corrupt user settings file (criterion 2)', async () => {
+    const { results } = await session(['CORRUPT'], [], '{"hooks":');
+    expect(results[0].isError).toBeFalsy();
+  }, 120_000);
+});
