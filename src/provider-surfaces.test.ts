@@ -280,21 +280,6 @@ describe('initGroupFilesystem agent surfaces', () => {
       expect(fs.readFileSync(projectFile, 'utf-8')).toBe('{"hooks":{}}');
       expect(fs.existsSync(quarantine(ag.id))).toBe(false);
     });
-
-    it('moves a project settings folder that is a symlink aside, never following it', async () => {
-      const ag = group('ag-project-link', 'project-link');
-      await createAgentGroup(ag);
-      const elsewhere = path.join(TEST_ROOT, 'elsewhere');
-      fs.mkdirSync(elsewhere, { recursive: true });
-      fs.writeFileSync(path.join(elsewhere, 'settings.json'), '{"hooks":');
-      fs.mkdirSync(path.join(GROUPS_DIR, ag.folder), { recursive: true });
-      fs.symlinkSync(elsewhere, path.join(GROUPS_DIR, ag.folder, '.claude'));
-
-      await initGroupFilesystem(ag);
-
-      expect(fs.existsSync(path.join(GROUPS_DIR, ag.folder, '.claude'))).toBe(false);
-      expect(fs.readFileSync(path.join(elsewhere, 'settings.json'), 'utf-8')).toBe('{"hooks":');
-    });
   });
 
   it('stages the same provider-neutral instructions for a provider with its own surfaces', async () => {

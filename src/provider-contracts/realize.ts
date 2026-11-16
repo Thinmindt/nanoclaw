@@ -241,29 +241,16 @@ function initializeFile(
 
 /**
  * A project settings file in the group folder is left absent or a regular
- * file holding a JSON object. Anything else, or a parent that is not a real
- * directory, is moved aside and not replaced.
+ * file holding a JSON object. Anything else is moved aside and not replaced.
  */
 function healProjectSettingsFile(groupDir: string, relativePath: string, agentGroupId: string): void {
   const segments = relativePath.split('/');
   const name = segments.pop()!;
   const filePath = path.join(groupDir, relativePath);
-  const label = `group-${relativePath.replaceAll('/', '-')}`;
-  let dir = AnchoredDir.open(groupDir, []);
-  if (!dir) return;
+  let dir: AnchoredDir | null = null;
   try {
-    for (const segment of segments) {
-      let child: AnchoredDir | null;
-      try {
-        child = dir.openDir(segment);
-      } catch {
-        moveAside(dir, segment, agentGroupId, label, filePath, `${segment} is not a real directory`);
-        return;
-      }
-      if (!child) return;
-      dir.close();
-      dir = child;
-    }
+    dir = AnchoredDir.open(groupDir, segments);
+    if (!dir) return;
     let stat: fs.Stats;
     try {
       stat = dir.lstat(name);
@@ -272,11 +259,11 @@ function healProjectSettingsFile(groupDir: string, relativePath: string, agentGr
       throw err;
     }
     const reason = stat.isFile() ? invalidJsonObjectReason(dir.readFile(name).toString('utf-8')) : 'not a regular file';
-    if (reason) moveAside(dir, name, agentGroupId, label, filePath, reason);
+    if (reason) moveAside(dir, name, agentGroupId, `group-${relativePath.replaceAll('/', '-')}`, filePath, reason);
   } catch (err) {
     log.warn('Project settings file not checked', { path: filePath, err });
   } finally {
-    dir.close();
+    dir?.close();
   }
 }
 
