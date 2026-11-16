@@ -84,6 +84,10 @@ export function initializeProviderGroupSurfaces(
     if (file.prepare.when === 'group-init') initializeFile(provider, file, volumes, agentGroupId, initialized);
   }
 
+  for (const relativePath of contract.projectSettingsFiles ?? []) {
+    healProjectSettingsFile(groupDir, relativePath, agentGroupId);
+  }
+
   for (const backing of contract.skillBackings) {
     if (backing.location.kind === 'state-volume') {
       const volume = volumes.get(backing.location.volumeId);
@@ -207,11 +211,21 @@ function initializeFile(
     }
     // Reconciliation runs at the moment the file is prepared, so the prepare
     // variant is the only schedule there is.
-    if (file.reconcile === undefined || file.prepare.when !== 'group-init') return;
+    if (file.reconcile === undefined || file.prepare.operation !== 'create-if-missing') return;
     const transformerProvider = file.reconcile.transformerProvider ?? provider;
     const transformer = providerFileTransformer(file.reconcile.transformer);
     try {
-      const result = transformer.transform(dir.readFile(name).toString('utf-8'), filePath);
+      const result = dir.lstat(name).isFile()
+        ? transformer.transform(dir.readFile(name).toString('utf-8'), filePath)
+        : ({ kind: 'invalid', reason: 'not a regular file' } as const);
+      if (result.kind === 'invalid') {
+        // A file the seat's next start cannot use is moved aside and the
+        // template takes its place, so the seat recovers with no operator.
+        moveAside(dir, name, agentGroupId, `${volume.directory}-${file.relativePath}`, filePath, result.reason);
+        dir.writeNewFile(name, Buffer.from(file.prepare.content));
+        initialized.push(`${file.relativePath} (replaced by the template)`);
+        return;
+      }
       emitDiagnostics(result.diagnostics);
       if (result.kind === 'replace') {
         dir.replaceFile(name, result.content);
@@ -223,6 +237,75 @@ function initializeFile(
   } finally {
     dir.close();
   }
+}
+
+/**
+ * A project settings file in the group folder is left absent or a regular
+ * file holding a JSON object. Anything else, or a parent that is not a real
+ * directory, is moved aside and not replaced.
+ */
+function healProjectSettingsFile(groupDir: string, relativePath: string, agentGroupId: string): void {
+  const segments = relativePath.split('/');
+  const name = segments.pop()!;
+  const filePath = path.join(groupDir, relativePath);
+  const label = `group-${relativePath.replaceAll('/', '-')}`;
+  let dir = AnchoredDir.open(groupDir, []);
+  if (!dir) return;
+  try {
+    for (const segment of segments) {
+      let child: AnchoredDir | null;
+      try {
+        child = dir.openDir(segment);
+      } catch {
+        moveAside(dir, segment, agentGroupId, label, filePath, `${segment} is not a real directory`);
+        return;
+      }
+      if (!child) return;
+      dir.close();
+      dir = child;
+    }
+    let stat: fs.Stats;
+    try {
+      stat = dir.lstat(name);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw err;
+    }
+    const reason = stat.isFile() ? invalidJsonObjectReason(dir.readFile(name).toString('utf-8')) : 'not a regular file';
+    if (reason) moveAside(dir, name, agentGroupId, label, filePath, reason);
+  } catch (err) {
+    log.warn('Project settings file not checked', { path: filePath, err });
+  } finally {
+    dir.close();
+  }
+}
+
+function invalidJsonObjectReason(content: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return 'does not parse as JSON';
+  }
+  return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? undefined
+    : 'root is not a JSON object';
+}
+
+/** Move a seat-written entry to a host folder no container mounts, and say so in one line. */
+function moveAside(
+  dir: AnchoredDir,
+  name: string,
+  agentGroupId: string,
+  label: string,
+  filePath: string,
+  reason: string,
+): void {
+  const folder = path.join(DATA_DIR, 'settings-quarantine', agentGroupId);
+  fs.mkdirSync(folder, { recursive: true });
+  const movedTo = path.join(folder, `${new Date().toISOString().replaceAll(':', '-')}-${label}`);
+  dir.moveOut(name, movedTo);
+  log.warn('Settings file moved aside', { path: filePath, reason, movedTo });
 }
 
 function providerFileTransformer(name: ProviderFileTransformerId): ProviderFileTransformer {

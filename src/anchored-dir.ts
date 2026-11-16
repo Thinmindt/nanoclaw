@@ -197,6 +197,11 @@ export class AnchoredDir {
     fs.unlinkSync(this.entryPath(name));
   }
 
+  /** Move the entry `name` itself (a symlink is moved, never followed) to a host path outside this tree. */
+  moveOut(name: string, destination: string): void {
+    fs.renameSync(this.entryPath(name), destination);
+  }
+
   rmdir(name: string): void {
     fs.rmdirSync(this.entryPath(name));
   }

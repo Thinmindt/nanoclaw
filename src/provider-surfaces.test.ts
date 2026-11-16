@@ -38,6 +38,7 @@ import { ensureContainerConfig } from './db/container-configs.js';
 import { initGroupFilesystem } from './group-init.js';
 import { PERSONA_PREPEND_FILE } from './group-persona.js';
 import { log } from './log.js';
+import { CLAUDE_DEFAULT_SETTINGS } from './migrate-claude-memory-settings.js';
 import {
   initializeProviderGroupSurfaces,
   protectedProviderDocumentSourcePaths,
@@ -177,9 +178,11 @@ describe('initGroupFilesystem agent surfaces', () => {
     settings.autoMemoryEnabled = true;
     settings.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '0';
     settings.customValue = 'preserved';
+    settings.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD = '1';
     settings.hooks.SessionStart = [
       { matcher: 'resume', hooks: [{ type: 'command', command: 'custom-resume' }] },
       { matcher: '.*', hooks: [{ type: 'command', command: 'bun /app/src/memory-hook.ts' }] },
+      { matcher: 'startup|clear|compact', hooks: [{ type: 'command', command: 'bun /app/src/memory/hook.ts' }] },
     ];
     fs.writeFileSync(settingsFile, JSON.stringify(settings, null, 2) + '\n');
 
@@ -188,6 +191,7 @@ describe('initGroupFilesystem agent surfaces', () => {
     const reconciled = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
     expect(reconciled.autoMemoryEnabled).toBe(false);
     expect(reconciled.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('1');
+    expect(reconciled.env).not.toHaveProperty('CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD');
     expect(reconciled.customValue).toBe('preserved');
     expect(reconciled.hooks.SessionStart).toEqual([
       { matcher: 'resume', hooks: [{ type: 'command', command: 'custom-resume' }] },
@@ -196,84 +200,100 @@ describe('initGroupFilesystem agent surfaces', () => {
   });
 
   it.each([
-    ['malformed JSON', '{"hooks":'],
-    ['a non-object root', '[]\n'],
-  ])('warns and leaves existing settings unchanged for %s', async (_label, content) => {
-    const ag = group('ag-invalid-claude', 'invalid-claude-group');
+    ['missing', undefined, 'default'],
+    ['set by the seat', 'Explanatory', 'Explanatory'],
+  ])('seeds the output style only when it is %s', async (_label, outputStyle, expected) => {
+    const ag = group('ag-output-style', 'output-style-group');
     await createAgentGroup(ag);
     await initGroupFilesystem(ag);
-
     const settingsFile = path.join(DATA_DIR, 'v2-sessions', ag.id, '.claude-shared', 'settings.json');
-    fs.writeFileSync(settingsFile, content);
+    const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    settings.outputStyle = outputStyle;
+    fs.writeFileSync(settingsFile, JSON.stringify(settings));
 
     await initGroupFilesystem(ag);
 
-    expect(fs.readFileSync(settingsFile, 'utf-8')).toBe(content);
-    expect(log.warn).toHaveBeenCalledWith(
-      expect.stringContaining('Claude settings'),
-      expect.objectContaining({ settingsFile }),
-    );
+    expect(JSON.parse(fs.readFileSync(settingsFile, 'utf-8')).outputStyle).toBe(expected);
   });
 
-  async function makeGroupLocal(id: string) {
-    const ag = group(id, `${id}-group`);
-    await createAgentGroup(ag);
-    return ag;
-  }
+  describe('a settings file the next start cannot use', () => {
+    // `.claude-shared` and the group folder are the container's read-write
+    // mounts: any name under them may hold anything by the next spawn.
+    const quarantine = (agId: string) => path.join(DATA_DIR, 'settings-quarantine', agId);
+    const plant: Record<string, (file: string) => void> = {
+      'malformed JSON': (file) => fs.writeFileSync(file, '{"hooks":'),
+      'a non-object root': (file) => fs.writeFileSync(file, '[]\n'),
+      'a symlink to a host file': (file) => fs.symlinkSync(path.join(TEST_ROOT, 'host-settings.json'), file),
+      'a FIFO': (file) => execFileSync('mkfifo', [file]),
+    };
 
-  describe('declared settings.json planted by the container', () => {
-    // `.claude-shared` is the container's read-write mount: any name under it
-    // may be a symlink or FIFO by the time the host prepares the next spawn.
-    const hostile = JSON.stringify({ autoMemoryEnabled: true, env: {}, hooks: {} }, null, 2) + '\n';
-
-    it('refuses a symlink to a host file: nothing read, nothing written through it', async () => {
-      const ag = await makeGroupLocal('ag-settings-link');
-      await initGroupFilesystem(ag, {});
-      const claudeDir = path.join(DATA_DIR, 'v2-sessions', ag.id, '.claude-shared');
-      const settingsFile = path.join(claudeDir, 'settings.json');
-      const hostFile = path.join(TEST_ROOT, 'host-settings.json');
-      fs.writeFileSync(hostFile, hostile);
+    it.each(Object.keys(plant))('moves the user file aside and writes the template for %s', async (label) => {
+      const ag = group(`ag-heal-${label.replaceAll(' ', '-')}`, `heal-${label.replaceAll(' ', '-')}`);
+      await createAgentGroup(ag);
+      await initGroupFilesystem(ag);
+      const settingsFile = path.join(DATA_DIR, 'v2-sessions', ag.id, '.claude-shared', 'settings.json');
+      fs.writeFileSync(path.join(TEST_ROOT, 'host-settings.json'), 'host');
       fs.rmSync(settingsFile);
-      fs.symlinkSync(hostFile, settingsFile);
+      plant[label](settingsFile);
 
-      await initGroupFilesystem(ag, {}); // next spawn
+      await initGroupFilesystem(ag); // next spawn
 
-      expect(fs.readFileSync(hostFile, 'utf-8')).toBe(hostile);
-      expect(fs.lstatSync(settingsFile).isSymbolicLink()).toBe(true);
+      expect(fs.lstatSync(settingsFile).isFile()).toBe(true);
+      expect(fs.readFileSync(settingsFile, 'utf-8')).toBe(CLAUDE_DEFAULT_SETTINGS);
+      expect(fs.readFileSync(path.join(TEST_ROOT, 'host-settings.json'), 'utf-8')).toBe('host');
+      expect(fs.readdirSync(quarantine(ag.id))).toHaveLength(1);
       expect(log.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Claude settings'),
-        expect.objectContaining({ settingsFile }),
+        'Settings file moved aside',
+        expect.objectContaining({ path: settingsFile }),
       );
     });
 
-    it('does not create a host file through a dangling symlink', async () => {
-      const ag = await makeGroupLocal('ag-settings-dangling');
-      await initGroupFilesystem(ag, {});
-      const settingsFile = path.join(DATA_DIR, 'v2-sessions', ag.id, '.claude-shared', 'settings.json');
-      const hostFile = path.join(TEST_ROOT, 'never-created.json');
-      fs.rmSync(settingsFile);
-      fs.symlinkSync(hostFile, settingsFile);
+    it.each(['settings.json', 'settings.local.json'])(
+      'moves an unusable project %s aside and writes nothing in its place',
+      async (name) => {
+        const ag = group(`ag-project-${name}`, `project-${name}`);
+        await createAgentGroup(ag);
+        const projectFile = path.join(GROUPS_DIR, ag.folder, '.claude', name);
+        fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+        fs.writeFileSync(projectFile, '{"hooks":');
 
-      await initGroupFilesystem(ag, {});
+        await initGroupFilesystem(ag);
 
-      expect(fs.existsSync(hostFile)).toBe(false);
-      expect(fs.lstatSync(settingsFile).isSymbolicLink()).toBe(true);
+        expect(fs.existsSync(projectFile)).toBe(false);
+        expect(fs.readdirSync(quarantine(ag.id))).toHaveLength(1);
+        expect(log.warn).toHaveBeenCalledWith(
+          'Settings file moved aside',
+          expect.objectContaining({ path: projectFile }),
+        );
+      },
+    );
+
+    it('leaves a project settings file holding a JSON object in place', async () => {
+      const ag = group('ag-project-valid', 'project-valid');
+      await createAgentGroup(ag);
+      const projectFile = path.join(GROUPS_DIR, ag.folder, '.claude', 'settings.json');
+      fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+      fs.writeFileSync(projectFile, '{"hooks":{}}');
+
+      await initGroupFilesystem(ag);
+
+      expect(fs.readFileSync(projectFile, 'utf-8')).toBe('{"hooks":{}}');
+      expect(fs.existsSync(quarantine(ag.id))).toBe(false);
     });
 
-    it('refuses a FIFO without blocking the spawn', async () => {
-      const ag = await makeGroupLocal('ag-settings-fifo');
-      await initGroupFilesystem(ag, {});
-      const settingsFile = path.join(DATA_DIR, 'v2-sessions', ag.id, '.claude-shared', 'settings.json');
-      fs.rmSync(settingsFile);
-      execFileSync('mkfifo', [settingsFile]);
+    it('moves a project settings folder that is a symlink aside, never following it', async () => {
+      const ag = group('ag-project-link', 'project-link');
+      await createAgentGroup(ag);
+      const elsewhere = path.join(TEST_ROOT, 'elsewhere');
+      fs.mkdirSync(elsewhere, { recursive: true });
+      fs.writeFileSync(path.join(elsewhere, 'settings.json'), '{"hooks":');
+      fs.mkdirSync(path.join(GROUPS_DIR, ag.folder), { recursive: true });
+      fs.symlinkSync(elsewhere, path.join(GROUPS_DIR, ag.folder, '.claude'));
 
-      await initGroupFilesystem(ag, {});
+      await initGroupFilesystem(ag);
 
-      expect(fs.lstatSync(settingsFile).isFIFO()).toBe(true);
-      expect(log.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Claude settings'),
-        expect.objectContaining({ settingsFile }),
-      );
+      expect(fs.existsSync(path.join(GROUPS_DIR, ag.folder, '.claude'))).toBe(false);
+      expect(fs.readFileSync(path.join(elsewhere, 'settings.json'), 'utf-8')).toBe('{"hooks":');
     });
   });
 

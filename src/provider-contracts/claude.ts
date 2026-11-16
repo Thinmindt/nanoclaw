@@ -50,7 +50,13 @@ export const CLAUDE_COMPATIBLE_HOST_SURFACES = {
       reconcile: { transformer: 'claude-settings' },
     },
   ],
-} satisfies Pick<ProviderHostContract, 'projectDocument' | 'stateVolumes' | 'skillBackings' | 'skillViews' | 'files'>;
+  // The group folder is the session's working directory, so the CLI reads
+  // these as project and local settings.
+  projectSettingsFiles: ['.claude/settings.json', '.claude/settings.local.json'],
+} satisfies Pick<
+  ProviderHostContract,
+  'projectDocument' | 'stateVolumes' | 'skillBackings' | 'skillViews' | 'files' | 'projectSettingsFiles'
+>;
 
 // The payload owns its transformer: core names no provider's implementation.
 registerProviderFileTransformer('claude-settings', claudeSettingsTransformer);

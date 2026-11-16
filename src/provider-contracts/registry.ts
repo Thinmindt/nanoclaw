@@ -134,6 +134,12 @@ export interface ProviderHostContract {
   skillBackings: readonly ProviderSkillBacking[];
   skillViews: readonly ProviderSkillView[];
   files: readonly ProviderPreparedFile[];
+  /**
+   * Settings files the provider's CLI reads from the group folder, relative to
+   * it. At every spawn core leaves each absent or a regular file holding a
+   * JSON object, moving anything else aside.
+   */
+  projectSettingsFiles?: readonly string[];
   /** Present only when the mixed-version compatibility adapter must be registered. */
   legacyHostAdapter?: 'required';
   commands?: {
@@ -409,6 +415,10 @@ export function assertProviderHostContractShape(provider: string, contract: Prov
       `${provider}.skillViews.${view.backingId}.mountClass`,
     );
     destinations.push(view.containerPath);
+  }
+
+  for (const relativePath of contract.projectSettingsFiles ?? []) {
+    assertRelativePath(relativePath, `${provider}.projectSettingsFiles`);
   }
 
   for (const file of contract.files) {
