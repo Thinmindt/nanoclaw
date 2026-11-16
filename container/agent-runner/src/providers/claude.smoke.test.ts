@@ -8,7 +8,7 @@
  * CLAUDE_SMOKE_CONTROL=1 runs the same file against a runner from before the
  * change, which still hands extra mounts to the CLI as added directories.
  */
-import { describe, expect, it } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -21,7 +21,8 @@ import './index.js';
 
 const control = process.env.CLAUDE_SMOKE_CONTROL === '1';
 const cwd = '/workspace/agent';
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-smoke-'));
+// Nothing touches the disk or the network until the gated suite's beforeAll.
+const root = path.join(os.tmpdir(), `claude-smoke-${process.pid}`);
 const mount = path.join(root, 'extra', 'shared');
 const MEMORY_MARKER = 'MARKER_MEMORY_CONTEXT';
 
@@ -88,16 +89,20 @@ function reply(body: Body): Response {
   });
 }
 
-const server = Bun.serve({
-  hostname: '127.0.0.1',
-  port: 0,
-  async fetch(request) {
-    if (new URL(request.url).pathname !== '/v1/messages') return Response.json({});
-    const text = await request.text();
-    requests.push(text);
-    return reply(JSON.parse(text) as Body);
-  },
-});
+let server: ReturnType<typeof Bun.serve>;
+
+function serveStub(): ReturnType<typeof Bun.serve> {
+  return Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    async fetch(request) {
+      if (new URL(request.url).pathname !== '/v1/messages') return Response.json({});
+      const text = await request.text();
+      requests.push(text);
+      return reply(JSON.parse(text) as Body);
+    },
+  });
+}
 
 // ── the plants ──
 
@@ -139,19 +144,22 @@ function fourPlants(dir: string, tag: string) {
 
 const top = fourPlants(mount, 'TOP');
 const down = fourPlants(path.join(mount, 'sub'), 'DOWN');
-write(path.join(mount, 'data.txt'), 'before\n');
-write(path.join(mount, 'sub', 'data.txt'), 'down\n');
 // Control (ii): loading on touch below the working directory.
 const nested = { instruction: 'MARKER_NESTED_INSTRUCTION', skill: 'MARKER_NESTED_SKILL' };
 const BESIDE = 'BESIDE_FILE_CONTENT';
-write(path.join(cwd, 'nested', 'CLAUDE.md'), `${nested.instruction}\n`);
-write(
-  path.join(cwd, 'nested', '.claude', 'skills', 'nested-skill', 'SKILL.md'),
-  `---\nname: nested-skill\ndescription: ${nested.skill}\n---\n\nBody.\n`,
-);
-write(path.join(cwd, 'nested', 'beside.txt'), `${BESIDE}\n`);
-write(path.join(cwd, 'memory', 'index.md'), `# Memory Index\n\n${MEMORY_MARKER}\n`);
-write(path.join(cwd, 'memory', 'system', 'definition.md'), '# Definition\n');
+
+function writeFixtures(): void {
+  write(path.join(mount, 'data.txt'), 'before\n');
+  write(path.join(mount, 'sub', 'data.txt'), 'down\n');
+  write(path.join(cwd, 'nested', 'CLAUDE.md'), `${nested.instruction}\n`);
+  write(
+    path.join(cwd, 'nested', '.claude', 'skills', 'nested-skill', 'SKILL.md'),
+    `---\nname: nested-skill\ndescription: ${nested.skill}\n---\n\nBody.\n`,
+  );
+  write(path.join(cwd, 'nested', 'beside.txt'), `${BESIDE}\n`);
+  write(path.join(cwd, 'memory', 'index.md'), `# Memory Index\n\n${MEMORY_MARKER}\n`);
+  write(path.join(cwd, 'memory', 'system', 'definition.md'), '# Definition\n');
+}
 
 // The session touches the nested folder, then reads, edits and writes in the
 // mount and one folder down with the file tools, and views and writes with the shell.
@@ -227,6 +235,15 @@ const occurrences = (body: string, marker: string) => body.split(marker).length 
 const requestFor = (bodies: string[], prompt: string) => bodies.find((b) => b.includes(prompt))!;
 
 (process.env.CLAUDE_SMOKE ? describe : describe.skip)('pinned Claude CLI through the runner', () => {
+  beforeAll(() => {
+    writeFixtures();
+    server = serveStub();
+  });
+  afterAll(() => {
+    server.stop(true);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
   it('loads nothing from an extra mount; files there are still read, edited and written (3a)', async () => {
     // The planting seat writes the eight plants with its own Write tool.
     const planter = newSeat();
