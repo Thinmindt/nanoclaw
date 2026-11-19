@@ -5,7 +5,13 @@
  * would invalidate it. Both setup entry points use this provider hook.
  */
 import { spawn, spawnSync } from 'child_process';
-import { getCredentialStore, type ProviderCredentialStore } from '../gateways/credential-store.js';
+import {
+  type ChatGptOAuthCredential,
+  type GatewayCredentialTarget,
+  getCredentialStore,
+  type ProviderCredentialStore,
+} from '../gateways/credential-store.js';
+import { getProviderModelEndpoint } from '../../src/provider-contracts/index.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -53,7 +59,11 @@ function ensureAnswer<T>(value: T | symbol): T {
 export async function runCodexAuthStep(): Promise<void> {
   const store = await getCredentialStore();
   if (await store.has('codex')) {
-    p.log.success(brandBody('Your OpenAI account is already connected.'));
+    p.log.success(
+      brandBody(
+        `Your OpenAI account is already connected. To replace an expired or revoked ChatGPT login, run: ${REAUTH_COMMAND}`,
+      ),
+    );
     setupLog.step('auth', 'skipped', 0, { REASON: 'openai-secret-already-present', PROVIDER: 'codex' });
     return;
   }
@@ -222,9 +232,17 @@ export async function runCodexLoginAuth(method: 'browser' | 'device', store?: Pr
 /** The ChatGPT plan the login's id token claims. Codex offers tools by it. */
 function loginPlanType(authJsonPath: string): string | undefined {
   try {
-    const idToken = JSON.parse(fs.readFileSync(authJsonPath, 'utf8')).tokens.id_token;
-    const claims = JSON.parse(Buffer.from(idToken.split('.')[1], 'base64url').toString('utf8'));
-    return claims['https://api.openai.com/auth'].chatgpt_plan_type;
+    return planFromIdToken(JSON.parse(fs.readFileSync(authJsonPath, 'utf8')).tokens.id_token);
+  } catch {
+    return undefined;
+  }
+}
+
+function planFromIdToken(idToken: unknown): string | undefined {
+  try {
+    const claims = JSON.parse(Buffer.from(String(idToken).split('.')[1], 'base64url').toString('utf8'));
+    const plan = claims['https://api.openai.com/auth'].chatgpt_plan_type;
+    return typeof plan === 'string' && plan ? plan : undefined;
   } catch {
     return undefined;
   }
@@ -232,13 +250,162 @@ function loginPlanType(authJsonPath: string): string | undefined {
 
 function runInherit(cmd: string, args: string[], extraEnv?: Record<string, string>): Promise<number> {
   return new Promise((resolve) => {
+    // Ctrl-C reaches the login and this process alike. Leave it to the login,
+    // whose non-zero exit then runs the caller's cleanup of the login home;
+    // dying here would strand a live credential on disk.
+    const ignore = (): void => {};
+    process.on('SIGINT', ignore);
+    const done = (code: number): void => {
+      process.off('SIGINT', ignore);
+      resolve(code);
+    };
     const child = spawn(cmd, args, {
       stdio: 'inherit',
       env: extraEnv ? { ...process.env, ...extraEnv } : process.env,
     });
-    child.on('close', (code) => resolve(code ?? 1));
-    child.on('error', () => resolve(1));
+    child.on('close', (code) => done(code ?? 1));
+    child.on('error', () => done(1));
   });
+}
+
+// ─── re-sign-in ──────────────────────────────────────────────────────────
+
+export const REAUTH_COMMAND = 'pnpm exec tsx scripts/codex-auth.ts --reauth';
+
+export type CodexLoginMethod = 'browser' | 'device';
+
+/**
+ * The stored ChatGPT login, as the gateway seam names it. Name and host match
+ * what first sign-in stores, so the gateway finds that same entry and replaces
+ * its value under the same id, keeping every agent's grant.
+ */
+export function codexChatGptTarget(): GatewayCredentialTarget {
+  return {
+    name: 'Codex',
+    kind: 'oauth',
+    host: new URL(getProviderModelEndpoint('codex', 'subscription')).hostname,
+    // The runtime's stand-in token; a gateway that replaces selectively matches it.
+    proxyValue: 'nc-codex-token-v1',
+    oauth: {
+      profile: 'chatgpt',
+      // The Codex CLI's public OAuth client.
+      clientId: 'app_EMoamEEZ73f0CkXaXp7hrann',
+      tokenEndpoint: getProviderModelEndpoint('codex', 'token'),
+    },
+  };
+}
+
+/** `[--reauth [--method browser|device]]`; `null` means the ordinary auth step. */
+export function parseCodexAuthArgs(args: string[]): { method: CodexLoginMethod } | null {
+  if (!args.length) return null;
+  const [flag, option, value] = args;
+  if (flag === '--reauth' && args.length === 1) return { method: 'browser' };
+  if (flag === '--reauth' && args.length === 3 && option === '--method' && (value === 'browser' || value === 'device'))
+    return { method: value };
+  throw new Error('Usage: codex-auth.ts [--reauth [--method browser|device]]');
+}
+
+/**
+ * Codex's own auth.json as the seam's ChatGPT profile, plus the plan its id
+ * token claims. Messages never quote the file: it holds live tokens.
+ */
+export function readCodexLogin(authJson: unknown): { credential: ChatGptOAuthCredential; plan?: string } {
+  const tokens = (authJson as { tokens?: Record<string, unknown> } | null)?.tokens;
+  const field = (name: string): string => {
+    const value = tokens?.[name];
+    if (typeof value !== 'string' || !value.trim() || /[\r\n]/.test(value))
+      throw new Error(`The Codex login has no usable ${name}. Sign in again with a ChatGPT plan.`);
+    return value;
+  };
+  return {
+    credential: {
+      profile: 'chatgpt',
+      accessToken: field('access_token'),
+      refreshToken: field('refresh_token'),
+      // Without it the gateway cannot route a ChatGPT request to the account.
+      accountId: field('account_id'),
+    },
+    plan: planFromIdToken(tokens?.id_token),
+  };
+}
+
+export interface CodexReauthDeps {
+  store?: ProviderCredentialStore;
+  /** Runs `codex login` with CODEX_HOME set to `home`; resolves its exit code. */
+  signIn?: (method: CodexLoginMethod, home: string) => Promise<number>;
+}
+
+/**
+ * Sign in again and replace the stored ChatGPT login in place. Only an
+ * existing entry is replaced: a first sign-in, with its grant steps, stays
+ * with the setup step. Throws on every failure; the caller reports it.
+ */
+export async function runCodexReauth(method: CodexLoginMethod, deps: CodexReauthDeps = {}): Promise<void> {
+  const store = deps.store ?? (await getCredentialStore());
+  if (!store.connection) {
+    throw new Error(
+      'The selected gateway cannot replace a stored login in place. Sign in through setup: pnpm exec tsx setup/index.ts --step provider-auth codex',
+    );
+  }
+  const login = store.connection(codexChatGptTarget());
+  if (!(await login.find())) {
+    throw new Error(
+      'No Codex ChatGPT login is stored in the selected gateway to replace. Sign in first: pnpm exec tsx setup/index.ts --step provider-auth codex',
+    );
+  }
+
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-vault-login-'));
+  const start = Date.now();
+  let parsed: ReturnType<typeof readCodexLogin>;
+  try {
+    if ((await (deps.signIn ?? signInCodex)(method, home)) !== 0)
+      throw new Error('The Codex sign-in did not complete.');
+    let authJson: unknown;
+    try {
+      authJson = JSON.parse(fs.readFileSync(path.join(home, 'auth.json'), 'utf8'));
+    } catch {
+      throw new Error('The Codex sign-in wrote no readable auth.json. Sign in again.');
+    }
+    parsed = readCodexLogin(authJson);
+  } finally {
+    // Gone before the gateway wait, so an interrupted save strands nothing.
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+
+  try {
+    await login.save(parsed.credential);
+  } catch (err) {
+    const message = storeFailureMessage(err);
+    setupLog.step('auth', 'failed', Date.now() - start, {
+      PROVIDER: 'codex',
+      METHOD: method,
+      MODE: 'reauth',
+      ERROR: 'gateway_store_failed',
+      MESSAGE: message,
+    });
+    throw new Error(`Couldn't replace the Codex login in the gateway: ${message}`);
+  }
+  if (parsed.plan) upsertEnvVar('CODEX_CHATGPT_PLAN', parsed.plan);
+  setupLog.step('auth', 'success', Date.now() - start, { PROVIDER: 'codex', METHOD: method, MODE: 'reauth' });
+}
+
+function signInCodex(method: CodexLoginMethod, home: string): Promise<number> {
+  p.log.step(
+    brandBody(method === 'device' ? 'Starting Codex device-code pairing…' : 'Opening the Codex sign-in flow…'),
+  );
+  return runInherit('codex', method === 'device' ? ['login', '--device-auth'] : ['login'], { CODEX_HOME: home });
+}
+
+/** `scripts/codex-auth.ts`: no arguments runs the setup step; `--reauth` replaces the stored login. */
+export async function runCodexAuthCli(args: string[]): Promise<void> {
+  const reauth = parseCodexAuthArgs(args);
+  if (!reauth) return runCodexAuthStep();
+  await runCodexReauth(reauth.method);
+  p.log.success(
+    brandBody(
+      'Codex login replaced in the selected gateway under the same id; agent grants are unchanged. Retry the failed request.',
+    ),
+  );
 }
 
 // ─── failure assist ──────────────────────────────────────────────────────
