@@ -20,10 +20,13 @@ import { createProvider } from './factory.js';
 import './index.js';
 
 const control = process.env.CLAUDE_SMOKE_CONTROL === '1';
-const cwd = '/workspace/agent';
-// Nothing touches the disk or the network until the gated suite's beforeAll.
+// Everything the test writes is under `root`, never a seat's /workspace/agent,
+// and nothing touches the disk or the network until the gated suite's beforeAll.
 const root = path.join(os.tmpdir(), `claude-smoke-${process.pid}`);
+const cwd = path.join(root, 'agent');
 const mount = path.join(root, 'extra', 'shared');
+/** The production hook, pointed at the test's working folder instead of /workspace/agent. */
+const memoryHook = { ...MEMORY_SESSION_HOOK, command: `${MEMORY_SESSION_HOOK.command} ${cwd}` };
 const MEMORY_MARKER = 'MARKER_MEMORY_CONTEXT';
 
 // ── the stub model ──
@@ -170,6 +173,11 @@ const touchScript = [
   { name: 'Write', input: { file_path: path.join(mount, 'written.txt'), content: 'written\n' } },
   { name: 'Read', input: { file_path: path.join(mount, 'sub', 'data.txt') } },
   {
+    name: 'Edit',
+    input: { file_path: path.join(mount, 'sub', 'data.txt'), old_string: 'down', new_string: 'down edited' },
+  },
+  { name: 'Write', input: { file_path: path.join(mount, 'sub', 'written.txt'), content: 'written\n' } },
+  {
     name: 'Bash',
     input: {
       command: `cat ${mount}/data.txt ${mount}/sub/data.txt && echo shell > ${mount}/shell.txt`,
@@ -197,7 +205,8 @@ async function session(
   prompts: string[],
   steps: typeof script,
   home = newSeat(),
-): Promise<{ requests: string[]; results: Array<{ isError?: boolean }> }> {
+  continuation?: string,
+): Promise<{ requests: string[]; results: Array<{ isError?: boolean }>; continuation?: string }> {
   requests = [];
   script = steps;
   const provider = createProvider('claude', {
@@ -213,12 +222,13 @@ async function session(
   });
   const previousHome = process.env.CLAUDE_CONFIG_DIR;
   process.env.CLAUDE_CONFIG_DIR = home;
-  registerProviderMemorySessionHook('claude', provider, MEMORY_SESSION_HOOK);
+  registerProviderMemorySessionHook('claude', provider, memoryHook);
   process.env.CLAUDE_CONFIG_DIR = previousHome;
 
-  const query = provider.query({ prompt: prompts[0], cwd });
+  const query = provider.query({ prompt: prompts[0], cwd, continuation });
   const results: Array<{ isError?: boolean }> = [];
   for await (const event of query.events) {
+    if (event.type === 'init') continuation = event.continuation;
     if (event.type !== 'result') continue;
     results.push(event);
     if (results.length === prompts.length) break;
@@ -226,7 +236,7 @@ async function session(
   }
   query.end();
   query.abort();
-  return { requests: [...requests], results };
+  return { requests: [...requests], results, continuation };
 }
 
 const loaded = (bodies: string[], marker: string) => bodies.some((b) => b.includes(marker));
@@ -234,12 +244,17 @@ const occurrences = (body: string, marker: string) => body.split(marker).length 
 /** The first request carrying `prompt` as user text. */
 const requestFor = (bodies: string[], prompt: string) => bodies.find((b) => b.includes(prompt))!;
 
-(process.env.CLAUDE_SMOKE ? describe : describe.skip)('pinned Claude CLI through the runner', () => {
+(process.env.CLAUDE_SMOKE === '1' ? describe : describe.skip)('pinned Claude CLI through the runner', () => {
+  const conversationsDir = process.env.NANOCLAW_CONVERSATIONS_DIR;
   beforeAll(() => {
     writeFixtures();
     server = serveStub();
+    // Compaction archives the conversation; keep that under `root` too.
+    process.env.NANOCLAW_CONVERSATIONS_DIR = path.join(root, 'conversations');
   });
   afterAll(() => {
+    if (conversationsDir === undefined) delete process.env.NANOCLAW_CONVERSATIONS_DIR;
+    else process.env.NANOCLAW_CONVERSATIONS_DIR = conversationsDir;
     server.stop(true);
     fs.rmSync(root, { recursive: true, force: true });
   });
@@ -284,16 +299,24 @@ const requestFor = (bodies: string[], prompt: string) => bodies.find((b) => b.in
       expect(fs.readFileSync(path.join(mount, 'written.txt'), 'utf-8')).toBe('written\n');
       expect(fs.readFileSync(path.join(mount, 'shell.txt'), 'utf-8')).toBe('shell\n');
       expect(loaded(bodies, 'down\\n')).toBe(true);
+      expect(fs.readFileSync(path.join(mount, 'sub', 'data.txt'), 'utf-8')).toBe('down edited\n');
       fs.writeFileSync(path.join(mount, 'data.txt'), 'before\n');
+      fs.writeFileSync(path.join(mount, 'sub', 'data.txt'), 'down\n');
     }
   }, 180_000);
 
-  it('brings memory context once at startup, after compaction and after clear (criterion 1)', async () => {
-    const prompts = ['FIRST_PROMPT', '/compact', 'AFTER_COMPACT', '/clear', 'AFTER_CLEAR'];
-    const { requests: bodies } = await session(prompts, []);
-    for (const prompt of ['FIRST_PROMPT', 'AFTER_COMPACT', 'AFTER_CLEAR']) {
-      expect([prompt, occurrences(requestFor(bodies, prompt), MEMORY_MARKER)]).toEqual([prompt, 1]);
-    }
+  // In production /clear is the runner dropping the continuation, so the next
+  // query is a startup. /compact dispatches only as a resumed query's first
+  // input, the way the poll loop sends it.
+  it('brings memory context once at startup and once after compaction (criterion 1)', async () => {
+    const home = newSeat();
+    const first = await session(['FIRST_PROMPT'], [], home);
+    expect(occurrences(requestFor(first.requests, 'FIRST_PROMPT'), MEMORY_MARKER)).toBe(1);
+
+    const { requests: bodies } = await session(['/compact', 'AFTER_COMPACT'], [], home, first.continuation);
+    const after = requestFor(bodies, 'AFTER_COMPACT');
+    expect(after.includes('FIRST_PROMPT')).toBe(false);
+    expect(occurrences(after, MEMORY_MARKER)).toBe(1);
   }, 180_000);
 
   it('completes a turn with a corrupt user settings file (criterion 2)', async () => {
