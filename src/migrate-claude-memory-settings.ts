@@ -48,7 +48,9 @@ export const CLAUDE_DEFAULT_SETTINGS =
  * Seed or reconcile `settings.json` in the Claude state directory. The
  * directory is a read-write mount, so the file is reached through the
  * directory's descriptor: a symlink or FIFO planted under its name is refused
- * and the settings are left alone. Returns what was done.
+ * and the settings are left alone. Returns what was done. This is the path for
+ * providers with no host contract; the contract path
+ * (provider-contracts/realize.ts) moves an unusable file aside instead.
  */
 export function prepareClaudeMemorySettings(claudeDir: string): 'created' | 'reconciled' | 'unchanged' {
   const settingsFile = path.join(claudeDir, CLAUDE_SETTINGS_FILE);

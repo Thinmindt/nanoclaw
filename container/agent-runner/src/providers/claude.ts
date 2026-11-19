@@ -300,7 +300,8 @@ export class ClaudeProvider implements AgentProvider {
         // input can never override them. Both are Settings members rather
         // than query options, which is why they ride `settings`. The memory
         // hook rides here too, so no settings file carries it: an in-process
-        // SessionStart callback is not called for `startup` at this SDK.
+        // SessionStart callback is not called for `startup` at this SDK (seen
+        // on the pinned CLI; claude.smoke.test.ts runs this hook end to end).
         settings: {
           ...this.inference.settings,
           ...this.executionPolicy.settings,
