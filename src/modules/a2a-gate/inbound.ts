@@ -19,7 +19,7 @@
  * removes the shapes that are built to be mistaken for the harness.
  */
 
-import { INVISIBLE } from './scrub.js';
+import { IGNORABLE, INVISIBLE } from './scrub.js';
 
 /** Longest answer text that may arrive, in characters. Three questions with sources fit; a page dump does not. */
 export const MAX_ANSWER_CHARS = 8000;
@@ -28,11 +28,13 @@ export interface SanitizedAnswer {
   text: string;
   /** What changed, for the header line and the log. */
   removed: { attachments: number; tags: number; invisibles: number; lines: number };
+  /** Tags nested deeper than the pass limit: every angle bracket left was removed. */
+  bracketsRemoved: boolean;
   truncated: boolean;
 }
 
 // An HTML or XML tag, comment, or processing instruction, up to a sane length.
-const TAG = /<\/?[a-z!?][^<>]{0,200}>/gi;
+export const TAG = /<\/?[a-z!?][^<>]{0,200}>/gi;
 
 // A line that opens with a role or instruction marker, or carries the
 // override phrase anywhere. Checked on the compatibility-folded line so
@@ -43,37 +45,69 @@ const OVERRIDE =
 
 const REMOVED_LINE = '[a line that read like an instruction was removed by the gate]';
 
+/** How many more times the reduction runs while it still changes the text. */
+const MAX_PASSES = 8;
+// Half of a character, left alone by a removal or cut in the page.
+const LONE_SURROGATE = /\p{Cs}/gu;
+// What a reader shows as a line break but the line check does not split on.
+const LINE_BREAK = /[\u2028\u2029]|\r(?!\n)/g;
+
 function countMatches(text: string, re: RegExp): number {
   return (text.match(re) ?? []).length;
 }
 
-/** Reduce an answer to bounded plain text. Idempotent: a sanitized answer passes through unchanged. */
-export function sanitizeAnswer(rawText: string, attachments: number, maxChars = MAX_ANSWER_CHARS): SanitizedAnswer {
-  const invisibles = countMatches(rawText, INVISIBLE);
-  let text = rawText.replace(INVISIBLE, '');
-  const tags = countMatches(text, TAG);
+/** One pass: invisible characters, then tags, then lines that read like instructions. Adds what it removed to `removed`. */
+function reduce(input: string, removed: SanitizedAnswer['removed']): string {
+  removed.invisibles += countMatches(input, INVISIBLE);
+  let text = input.replace(INVISIBLE, '');
+  removed.tags += countMatches(text, TAG);
   text = text.replace(TAG, '');
-
-  let lines = 0;
-  text = text
+  return text
     .split('\n')
     .map((line) => {
       const folded = line.normalize('NFKC');
       if (line === REMOVED_LINE || (!ROLE_MARKER.test(folded) && !OVERRIDE.test(folded))) return line;
-      lines += 1;
+      removed.lines += 1;
       return REMOVED_LINE;
     })
     .join('\n');
+}
 
-  // The cut leaves room for the marker, so a cut answer stays under the cap
-  // and a second pass changes nothing.
+/**
+ * Reduce an answer to bounded plain text. What holds: the result has no tag,
+ * no invisible or ignorable character, no half of a character, and is no
+ * longer than the cap. A second pass changes nothing, with one limit: the cut
+ * comes after the line checks, so a cut that lands exactly where an override
+ * phrase ends ("...previous rules|ets") leaves that last line in place.
+ */
+export function sanitizeAnswer(rawText: string, attachments: number, maxChars = MAX_ANSWER_CHARS): SanitizedAnswer {
+  const removed = { attachments, tags: 0, invisibles: 0, lines: 0 };
+  let text = reduce(rawText, removed);
+
+  // Only after the first pass, so a phrase spelled with separators or fillers
+  // in place of its spaces is still read whole: drop halves of characters and
+  // ignorable code points, and break lines where a reader would.
+  removed.invisibles += countMatches(text, LONE_SURROGATE) + countMatches(text, IGNORABLE);
+  text = text.replace(LONE_SURROGATE, '').replace(IGNORABLE, '').replace(LINE_BREAK, '\n');
+
+  // Removing a tag can join what was around it into a new tag or a marker line.
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    const next = reduce(text, removed);
+    if (next === text) break;
+    text = next;
+  }
+  const bracketsRemoved = countMatches(text, TAG) > 0;
+  if (bracketsRemoved) text = reduce(text.replace(/[<>]/g, ''), removed);
+
+  // The cut leaves room for the marker, so a cut answer stays under the cap,
+  // and lands between characters, never inside a surrogate pair.
   const truncated = text.length > maxChars;
   if (truncated) {
     const marker = `\n[truncated by the gate at ${maxChars} characters]`;
-    text = text.slice(0, maxChars - marker.length) + marker;
+    text = text.slice(0, maxChars - marker.length).replace(/[\uD800-\uDBFF]$/, '') + marker;
   }
 
-  return { text, removed: { attachments, tags, invisibles, lines }, truncated };
+  return { text, removed, bracketsRemoved, truncated };
 }
 
 /** The one-line header the reader sees first. */
@@ -84,6 +118,7 @@ export function describeSanitized(from: string, result: SanitizedAnswer): string
     tags > 0 ? `${tags} tag${tags === 1 ? '' : 's'} removed` : '',
     invisibles > 0 ? `${invisibles} invisible character${invisibles === 1 ? '' : 's'} removed` : '',
     lines > 0 ? `${lines} instruction-like line${lines === 1 ? '' : 's'} removed` : '',
+    result.bracketsRemoved ? 'angle brackets removed' : '',
     result.truncated ? 'truncated' : '',
   ].filter(Boolean);
   return `[gate: answer from ${from}, plain text${notes.length > 0 ? `; ${notes.join(', ')}` : ', nothing removed'}]`;
