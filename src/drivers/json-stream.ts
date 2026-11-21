@@ -29,9 +29,10 @@ export class JsonDocumentStream {
       } else if (ch === '{') {
         if (this.#depth === 0) this.#start = i;
         this.#depth++;
-      } else if (ch === '}') {
+      } else if (ch === '}' && this.#depth > 0) {
+        // A closing brace outside any document is garbage; counting it would leave the depth below zero for good.
         this.#depth--;
-        if (this.#depth === 0 && this.#start >= 0) {
+        if (this.#depth === 0) {
           const text = this.#buffer.slice(this.#start, i + 1);
           try {
             docs.push(JSON.parse(text));
@@ -44,7 +45,10 @@ export class JsonDocumentStream {
         }
       }
     }
-    // Never let an un-terminated document grow without bound.
+    // Drop garbage between documents once it passes a megabyte. Limits: the cap
+    // applies at depth 0 only, so after a stray opening brace the buffer is not
+    // bounded; and a stray opening brace or double quote outside a document
+    // stalls the stream, since everything after it reads as inside one.
     if (this.#depth === 0 && this.#buffer.length > 1_000_000) this.#buffer = '';
     return docs;
   }
