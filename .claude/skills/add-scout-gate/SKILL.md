@@ -22,17 +22,19 @@ because a sender can add labels. No model is consulted. It refuses:
 | fields | any content field besides a string `text` and a list of file names: the target would see a quoted reply, links, or app context that the rules below never read |
 | attachments | any file, whatever its name |
 | size | text over 1500 characters, which is a document, not a question, and more than the owner's approval card shows in full |
-| invisible | control, zero-width, bidi, soft-hyphen, and tag-block characters: they split a term so it no longer matches, and the tag block can hide a whole sentence |
+| invisible | control, zero-width, bidi, soft-hyphen, and tag-block characters, every other default-ignorable code point (variation selectors, the combining grapheme joiner, the Mongolian vowel separator, Hangul fillers), and the line and paragraph separators: they split a term so it no longer matches, and the tag block can hide a whole sentence |
 | url, host, ip, email | links with a scheme, `www.`, or a dotted name followed by a path; bare host names on a known ending, also spelled out (`example dot com`, `exfil[.]com`); IPv4/IPv6 addresses; mail addresses |
 | path | absolute, relative with two or more slashes, home-relative, and Windows paths |
 | token | base64 runs of 40 or more with a digit or symbol, hex runs of 32 or more, and any whitespace-free token of 48 or more |
-| private-term | any line of `data/a2a-gate/private-terms`, case-insensitive substring |
+| private-term | any line of `data/a2a-gate/private-terms`, folded and case-insensitive, as a substring; a term of eight characters or more also with everything but letters and digits removed from both, so `Holly hock` matches `Hollyhock` |
 | canary | any line of `data/a2a-gate/canaries`, same match, checked first and logged as a tripped canary |
 
 Text is folded before the rules run (compatibility forms, ideographic stops, bracketed or
-spelled dots), so `ｅｘｆｉｌ。com` is a host too. A refused message is not delivered. The
-sender gets one system note saying which rule matched and what matched, so it can rephrase and
-send again; the host log carries the rule only, never the matched text. If either term file is
+spelled dots), so `ｅｘｆｉｌ。com` is a host too; each term is folded the same way. A refused
+message is not delivered. The sender gets one system note saying which rule matched and what
+matched (for a term, the term as listed, and whether it was found with spaces and punctuation
+removed), so it can rephrase and send again; the host log carries the rule only, never the
+matched text. If either term file is
 missing or unreadable, every gated message is refused: an unconfigured gate is a closed gate.
 Pairs whose target is not gated are untouched.
 
@@ -41,8 +43,14 @@ match, on the sender) is written to the target's inbox as plain text and nothing
 attachment is dropped; control, zero-width, bidi, and tag-block characters are removed; HTML
 and XML tags are removed; a line that opens with a role marker (`system:`, `assistant:`,
 `instructions:`) or carries an "ignore your previous instructions" phrase is replaced by a note
-saying so; and the text is cut at 8000 characters. A header line on the answer says what was
-removed, so a trimmed answer is never read as a complete one. Links stay: the Architect checks
+saying so. After that first pass, halves of characters and every other default-ignorable code
+point are removed (an emoji's variation selector now counts as an invisible character removed),
+line and paragraph separators and lone carriage returns become line breaks, and the whole
+reduction repeats, up to eight more passes, because removing a tag can join what was around it
+into a new one. Tags nested deeper than that lose their angle brackets; arrows and comparisons
+in an ordinary answer keep theirs. The text is cut at 8000 characters, between characters. A
+header line on the answer says what was removed, the angle brackets included, so a trimmed
+answer is never read as a complete one. Links stay: the Architect checks
 sources by id against them. A page's instruction phrased as ordinary prose still crosses as
 text; the Architect's own rule that an answer is data is the layer for that.
 
@@ -60,9 +68,12 @@ Answers from the Scout are not affected: a pair from a gated group with no polic
 
 Known limits of a pattern gate, stated so nobody relies on more than it does: a bare host on an
 ending the list does not know crosses when it carries no path; a secret split into short
-chunks crosses; a private fact in plain words that match no term crosses. Two-letter endings
-that are also file extensions (`sh`, `so`, `in`, `is`, `it`, `me`, `to`) are left out of the
-bare-host list so `build.sh` and `libfoo.so` cross.
+chunks crosses; a private fact in plain words that match no term crosses; a term spelled with
+look-alike letters from another script or with accents crosses, and so does a term under eight
+characters split by a space. Two-letter endings that are also file extensions (`sh`, `so`,
+`in`, `is`, `it`, `me`, `to`) are left out of the bare-host list so `build.sh` and `libfoo.so`
+cross. On the way back, the cut comes after the line checks, so a cut that lands exactly where
+an override phrase ends leaves that last line in place.
 
 One piece: `src/modules/a2a-gate/`, called from the agent-to-agent module: twice in the
 `a2a.send` decision (refuse on content, refuse a line with no policy) and once in the route that
@@ -81,6 +92,7 @@ Run every step from the NanoClaw project root. Each step is safe to re-run.
 .claude/skills/add-scout-gate/resources/a2a-gate/scrub.test.ts    → src/modules/a2a-gate/scrub.test.ts
 .claude/skills/add-scout-gate/resources/a2a-gate/inbound.test.ts  → src/modules/a2a-gate/inbound.test.ts
 .claude/skills/add-scout-gate/resources/a2a-gate/gate.test.ts     → src/modules/a2a-gate/gate.test.ts
+.claude/skills/add-scout-gate/resources/a2a-gate/skill-sync.test.ts → src/modules/a2a-gate/skill-sync.test.ts
 ```
 
 ```bash
@@ -88,17 +100,21 @@ mkdir -p src/modules/a2a-gate
 cp .claude/skills/add-scout-gate/resources/a2a-gate/*.ts src/modules/a2a-gate/
 ```
 
-- `scrub.test.ts` unit-tests the outbound rules above, one case per rule, the folding, the
-  ordinary technical prose that must cross (`react@18.3.1`, `build.sh`, a four-part version),
-  and the term-list parser.
-- `inbound.test.ts` unit-tests the reduction: tags, invisible characters, marker and override
-  lines (also in full-width letters), the cut at the cap, the header, and that a reduced answer
-  passes a second reduction unchanged.
+- `scrub.test.ts` unit-tests the outbound rules above, one case per rule, each newly refused
+  invisible character by name, the folding of text and terms, a long term split by a space,
+  the ordinary technical prose that must cross (`react@18.3.1`, `build.sh`, a four-part
+  version), and the term-list parser.
+- `inbound.test.ts` unit-tests the reduction: tags, nested tags, invisible characters, marker
+  and override lines (also in full-width letters, behind a separator or a lone carriage return,
+  and spelled with separators or fillers for spaces), the cut at the cap, the header, and that a
+  reduced answer passes a second reduction unchanged.
+- `skill-sync.test.ts` fails when a file here and its copy under `src/modules/a2a-gate/` differ.
 - `gate.test.ts` drives messages through the real `routeAgentMessage` with a test DB: a clean
   question on a line with no policy is refused with one note saying so, an approved message
   whose policy is gone by the tap is refused with one readable note, text of 1501 characters is
   refused for size, a link is refused with one note to the sender across retries and
-  no matched text in the reason, a private term and a canary are refused, a target listed by id
+  no matched text in the reason, a private term and a canary are refused, a term split by a space
+  is refused with a note saying it was matched with spaces and punctuation removed, a target listed by id
   is gated whatever its name, a refusal wins over a message policy's hold, missing term files
   refuse everything, the Scout's answer arrives as plain text with its links kept and its
   attachment dropped, an answer from a group listed by id is reduced too, and the Architect →
@@ -179,7 +195,7 @@ pnpm exec vitest run src/modules/a2a-gate src/modules/agent-to-agent src/guard
 ### 4. Write the lists on the host
 
 The lists live outside the repository, under `data/a2a-gate/`, one entry per line, `#` for
-comments, entries under four characters ignored. They are never committed.
+comments, entries under four characters (before or after folding) ignored. They are never committed.
 
 ```bash
 mkdir -p data/a2a-gate
@@ -194,8 +210,10 @@ renamed. The file may be absent; then only the name match gates.
 `private-terms`: the owner's name and handles, family and pet names, project names, host and
 machine names, the share's folder names, and anything else that would identify the owner or
 the projects to a stranger. The Steward agent can draft the list from what it knows; the owner
-reviews it. The list is checked as a case-insensitive substring, so `bird-counter` also catches
-`BirdCounter-v2` but `Bobby` also catches `bobbysocks`; prefer distinctive terms of five characters or more.
+reviews it. The list is checked as a case-insensitive substring, and a term of eight characters
+or more also with spaces and punctuation removed, so `bird-counter` also catches `BirdCounter-v2`
+and `bird counter`, but `Bobby` also catches `bobbysocks`; prefer distinctive terms, and eight
+characters or more where a split spelling should be caught too.
 
 `canaries`: a few made-up strings (for example `zebra-umbrella-42`) that the owner also pastes
 into private documents the Architect can read, such as a workbench note or a README in a
