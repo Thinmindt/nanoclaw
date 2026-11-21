@@ -15,16 +15,20 @@
  * limits, inherent to a pattern gate: a bare host on a top-level domain the
  * list does not know crosses when it has no path; a secret split across
  * several short tokens crosses; a private fact phrased in plain words that
- * match no term crosses. The term lists, the character cap, and the
- * Architect's own rule to ask generic questions are the layers against that.
+ * match no term crosses. A listed term of eight characters or more is also
+ * looked for with spaces and punctuation removed, so splitting it does not
+ * hide it; what stays open is look-alike letters from another script,
+ * accented spellings, and a short term split by a space. The term lists, the
+ * character cap, and the Architect's own rule to ask generic questions are
+ * the layers against that.
  */
 
 export interface ScrubOptions {
   /** Longest message text allowed, in characters. */
   maxChars: number;
-  /** Case-insensitive substrings that must never cross. */
+  /** Terms that must never cross, matched as described at `findTerm`. */
   privateTerms: string[];
-  /** Case-insensitive substrings planted in private docs; a hit means something was lifted from them. */
+  /** Strings planted in private docs, matched the same way; a hit means something was lifted from them. */
   canaries: string[];
 }
 
@@ -43,21 +47,34 @@ export interface ScrubHit {
     | 'path'
     | 'token'
     | 'private-term';
-  /** The matched text, cut short, for the note to the sender. */
+  /** The matched text, cut short, for the note to the sender. For a term, the term as listed. */
   match: string;
+  /** Set when a term was found only with spaces and punctuation removed. */
+  stripped?: true;
 }
 
 /**
  * Control characters (except tab and newline), soft hyphen, zero-width and
  * joiner characters, bidi controls, the byte-order mark, interlinear
  * annotation, and the tag block used to hide text inside emoji sequences.
- * Outbound they refuse the message: they split a term so it no longer
- * matches, and the tag block can carry a whole hidden sentence. Inbound
- * (./inbound.ts) they are removed.
+ * Outbound they refuse the message, as do IGNORABLE and SEPARATORS below:
+ * they split a term so it no longer matches, and the tag block can carry a
+ * whole hidden sentence. Inbound (./inbound.ts) they are removed.
  */
 export const INVISIBLE =
   // eslint-disable-next-line no-control-regex -- the control characters are the point of the rule
   /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u00AD\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]|[\u{E0000}-\u{E007F}]/gu;
+
+/**
+ * Every default-ignorable code point. Beyond INVISIBLE this adds the
+ * variation selectors (an emoji's U+FE0F among them), the combining grapheme
+ * joiner, the Mongolian vowel separator, and the Hangul fillers, which show
+ * as nothing or as a blank. Inbound they are deleted after the first pass.
+ */
+export const IGNORABLE = /\p{Default_Ignorable_Code_Point}/gu;
+
+/** The line and paragraph separators, where a reader breaks the line. Inbound they become newlines. Spaces of every width cross. */
+const SEPARATORS = /[\u2028\u2029]/u;
 
 // Bare-host detection needs a list of endings; the scheme-less URL rule below
 // catches any dotted name followed by a path whatever its ending. Two-letter
@@ -196,6 +213,29 @@ function clip(s: string): string {
   return s.length > 60 ? `${s.slice(0, 57)}...` : s;
 }
 
+/** Terms at least this long, once folded and stripped, are also looked for with spaces and punctuation removed. A trial floor (owner, 2026-11-18). */
+const STRIPPED_FLOOR = 8;
+const NOT_LETTER_OR_DIGIT = /[^\p{L}\p{N}]/gu;
+
+/**
+ * The first listed term in the text. A term is folded the way the text is and
+ * found as a substring; one of STRIPPED_FLOOR or more is also found in the
+ * text with everything but letters and digits removed. A term that folds to
+ * under four characters, or strips to nothing, never matches.
+ */
+function findTerm(rule: ScrubHit['rule'], terms: string[], lower: string, bare: string): ScrubHit | null {
+  for (const term of terms) {
+    const folded = foldText(term).toLowerCase();
+    const stripped = folded.replace(NOT_LETTER_OR_DIGIT, '');
+    if (folded.length < 4 || stripped === '') continue;
+    if (lower.includes(folded)) return { rule, match: clip(term) };
+    if (stripped.length >= STRIPPED_FLOOR && bare.includes(stripped)) {
+      return { rule, match: clip(term), stripped: true };
+    }
+  }
+  return null;
+}
+
 /**
  * Returns the first hit, or null when the message may cross. Attachments,
  * size and invisible characters refuse before the text is read; canaries are checked next so that a
@@ -204,7 +244,7 @@ function clip(s: string): string {
 export function scrubForScout(rawText: string, files: string[], opts: ScrubOptions): ScrubHit | null {
   if (files.length > 0) return { rule: 'attachments', match: clip(files.join(', ')) };
   if (rawText.length > opts.maxChars) return { rule: 'size', match: `${rawText.length} characters` };
-  const invisible = rawText.match(INVISIBLE);
+  const invisible = rawText.match(INVISIBLE) ?? rawText.match(IGNORABLE) ?? rawText.match(SEPARATORS);
   if (invisible) {
     const cp = invisible[0].codePointAt(0)!;
     return { rule: 'invisible', match: `U+${cp.toString(16).toUpperCase().padStart(4, '0')}` };
@@ -212,9 +252,9 @@ export function scrubForScout(rawText: string, files: string[], opts: ScrubOptio
 
   const text = foldText(rawText);
   const lower = text.toLowerCase();
-  for (const term of opts.canaries) {
-    if (lower.includes(term.toLowerCase())) return { rule: 'canary', match: clip(term) };
-  }
+  const bare = lower.replace(NOT_LETTER_OR_DIGIT, '');
+  const canary = findTerm('canary', opts.canaries, lower, bare);
+  if (canary) return canary;
 
   for (const { rule, re } of RULES) {
     const m = re.exec(text);
@@ -223,8 +263,5 @@ export function scrubForScout(rawText: string, files: string[], opts: ScrubOptio
   const ip = findIpv4(text) ?? findIpv6(text);
   if (ip) return { rule: 'ip', match: clip(ip) };
 
-  for (const term of opts.privateTerms) {
-    if (lower.includes(term.toLowerCase())) return { rule: 'private-term', match: clip(term) };
-  }
-  return null;
+  return findTerm('private-term', opts.privateTerms, lower, bare);
 }

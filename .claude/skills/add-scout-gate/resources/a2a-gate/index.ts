@@ -180,7 +180,8 @@ export async function vetoA2aContent(input: GuardInput): Promise<string | null> 
       msgId: messageId,
     });
   }
-  await tellSender(input, messageId, rephrase(`${EXPLANATIONS[hit.rule]} ("${hit.match}")`));
+  const how = hit.stripped ? ', matched with spaces and punctuation removed' : '';
+  await tellSender(input, messageId, rephrase(`${EXPLANATIONS[hit.rule]} ("${hit.match}"${how})`));
   return `a2a-gate: message to ${targetName} refused (${hit.rule})`;
 }
 

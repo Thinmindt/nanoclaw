@@ -178,6 +178,13 @@ describe('a2a-gate on messages to the scout', () => {
     expect(inboundTexts(SCOUT, scout.id)).toHaveLength(0);
   });
 
+  it('tells the sender when a term was found with spaces and punctuation removed', async () => {
+    await expect(send(architect, SCOUT, 'About the Holly hock service')).rejects.toThrow(/private-term/);
+    expect(inboundTexts(ARCHITECT, architect.id)[0]).toContain(
+      '("hollyhock", matched with spaces and punctuation removed)',
+    );
+  });
+
   it('gates a target listed by id whatever its name', async () => {
     await expect(send(architect, LISTED, 'see https://example.com/x')).rejects.toThrow(/to Research refused/);
     expect(inboundTexts(LISTED, listed.id)).toHaveLength(0);

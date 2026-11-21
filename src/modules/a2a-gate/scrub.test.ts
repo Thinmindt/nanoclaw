@@ -35,6 +35,13 @@ describe('scrubForScout', () => {
     ['a bidi override', 'see \u202Eexample', 'U+202E'],
     ['text hidden in the tag block', 'a clean question\u{E0068}\u{E006F}', 'U+E0068'],
     ['a soft hyphen', 'bird-coun\u00ADter', 'U+00AD'],
+    ['an emoji variation selector', 'Holly\uFE0Fhock', 'U+FE0F'],
+    ['a combining grapheme joiner', 'Holly\u034Fhock', 'U+034F'],
+    ['a line separator', 'Holly\u2028hock', 'U+2028'],
+    ['a paragraph separator', 'Holly\u2029hock', 'U+2029'],
+    ['a Mongolian vowel separator', 'Holly\u180Ehock', 'U+180E'],
+    ['a Hangul choseong filler', 'Holly\u115Fhock', 'U+115F'],
+    ['a Hangul filler', 'Holly\u3164hock', 'U+3164'],
   ])('refuses %s, naming the character', (_, text, cp) => {
     expect(hit(text)).toEqual({ rule: 'invisible', match: cp });
   });
@@ -79,6 +86,17 @@ describe('scrubForScout', () => {
     ['quote: zebra-umbrella-42', 'canary'],
   ])('refuses %j as %s', (text, rule) => {
     expect(hit(text)?.rule).toBe(rule);
+  });
+
+  it('finds a term of 8 or more split by a space, saying so', () => {
+    expect(hit('about Holly hock again')).toEqual({ rule: 'private-term', match: 'Hollyhock', stripped: true });
+  });
+
+  it('folds a term the way the text is folded, and skips one that folds short or strips to nothing', () => {
+    const terms = (privateTerms: string[], text: string) => scrubForScout(text, [], { ...OPTS, privateTerms });
+    expect(terms(['ｚｅｂｒａ-run'], 'about zebra-run again')?.rule).toBe('private-term');
+    expect(terms(['a(dot)b'], 'about a.b again')).toBeNull();
+    expect(terms(['----'], 'about ---- again')).toBeNull();
   });
 
   it('reports what matched, clipped', () => {
