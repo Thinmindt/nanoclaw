@@ -32,7 +32,7 @@ export interface SanitizedAnswer {
 }
 
 // An HTML or XML tag, comment, or processing instruction, up to a sane length.
-const TAG = /<\/?[a-z!?][^<>]{0,200}>/gi;
+export const TAG = /<\/?[a-z!?][^<>]{0,200}>/gi;
 
 // A line that opens with a role or instruction marker, or carries the
 // override phrase anywhere. Checked on the compatibility-folded line so
@@ -47,23 +47,27 @@ function countMatches(text: string, re: RegExp): number {
   return (text.match(re) ?? []).length;
 }
 
-/** Reduce an answer to bounded plain text. Idempotent: a sanitized answer passes through unchanged. */
-export function sanitizeAnswer(rawText: string, attachments: number, maxChars = MAX_ANSWER_CHARS): SanitizedAnswer {
-  const invisibles = countMatches(rawText, INVISIBLE);
-  let text = rawText.replace(INVISIBLE, '');
-  const tags = countMatches(text, TAG);
+/** One pass: invisible characters, then tags, then lines that read like instructions. Adds what it removed to `removed`. */
+function reduce(input: string, removed: SanitizedAnswer['removed']): string {
+  removed.invisibles += countMatches(input, INVISIBLE);
+  let text = input.replace(INVISIBLE, '');
+  removed.tags += countMatches(text, TAG);
   text = text.replace(TAG, '');
-
-  let lines = 0;
-  text = text
+  return text
     .split('\n')
     .map((line) => {
       const folded = line.normalize('NFKC');
       if (line === REMOVED_LINE || (!ROLE_MARKER.test(folded) && !OVERRIDE.test(folded))) return line;
-      lines += 1;
+      removed.lines += 1;
       return REMOVED_LINE;
     })
     .join('\n');
+}
+
+/** Reduce an answer to bounded plain text. Idempotent: a sanitized answer passes through unchanged. */
+export function sanitizeAnswer(rawText: string, attachments: number, maxChars = MAX_ANSWER_CHARS): SanitizedAnswer {
+  const removed = { attachments, tags: 0, invisibles: 0, lines: 0 };
+  let text = reduce(rawText, removed);
 
   // The cut leaves room for the marker, so a cut answer stays under the cap
   // and a second pass changes nothing.
@@ -73,7 +77,7 @@ export function sanitizeAnswer(rawText: string, attachments: number, maxChars = 
     text = text.slice(0, maxChars - marker.length) + marker;
   }
 
-  return { text, removed: { attachments, tags, invisibles, lines }, truncated };
+  return { text, removed, truncated };
 }
 
 /** The one-line header the reader sees first. */
