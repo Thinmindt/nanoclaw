@@ -92,7 +92,11 @@ The setup screens and step sequence do not change.
 payload/src/provider-contracts/codex.ts -> src/provider-contracts/codex.ts
 payload/setup/providers/codex.ts -> setup/providers/codex.ts
 payload/setup/providers/codex.test.ts -> setup/providers/codex.test.ts
+payload/scripts/codex-auth.ts -> scripts/codex-auth.ts
 ```
+
+`scripts/codex-auth.ts` is the host entry for signing in again after a ChatGPT login expires or is
+revoked; see **Recover a ChatGPT login**.
 
 ### 2. Wire the barrels
 
@@ -164,7 +168,37 @@ None of those start the Codex binary. `codex-app-server.smoke.test.ts` does, in 
 pnpm exec tsx setup/index.ts --step provider-auth codex
 ```
 
-The same walk-through fresh installs get from the setup picker: ChatGPT subscription (browser login or device pairing) or an OpenAI API key, landed in the selected gateway’s vault. Idempotent — it short-circuits when a matching secret already exists. It finishes with the install check.
+The same walk-through fresh installs get from the setup picker: ChatGPT subscription (browser login or device pairing) or an OpenAI API key, landed in the selected gateway’s vault. Idempotent — it short-circuits when a matching secret already exists, so it never replaces an expired login; use **Recover a ChatGPT login** for that. It finishes with the install check.
+
+## Recover a ChatGPT login
+
+Token refresh belongs to the credential gateway; its skill says whether a login
+needs signing in again after expiry. With OneCLI 1.42.0 it does, about ten days
+after each sign-in (`.claude/skills/add-onecli/references/chatgpt-oauth-refresh.md`).
+The container holds only a stand-in; never copy a live login into a group.
+
+When Codex requests fail because the login expired or was revoked, run on the host:
+
+```bash
+pnpm exec tsx scripts/codex-auth.ts --reauth
+# No browser on the host (shows a URL and a code instead):
+pnpm exec tsx scripts/codex-auth.ts --reauth --method device
+```
+
+This runs `codex login` in a throwaway `CODEX_HOME`, removes it once the login
+file is read, and replaces the value of the stored `Codex` login through the
+gateway's provider credential connection. The entry keeps its id, so every
+agent granted it keeps its grant. The login's ChatGPT plan is written to
+`CODEX_CHATGPT_PLAN` in `.env`. The host reads the plan at start and writes it,
+with the workspace id, into an agent's login stand-in when its container spawns,
+so a changed plan or workspace reaches an agent at its next container spawn
+after a host restart. The same account and plan need neither restart. Retry the
+failed request.
+
+It only replaces: with no stored ChatGPT login, or a gateway without provider
+credential connections, it stops and points to the setup step above, which
+signs in for the first time. A duplicate `Codex` entry or one with unexpected
+metadata also stops it; the message names the fields to check in the gateway.
 
 ## Use it
 
@@ -202,4 +236,4 @@ This affects only groups created afterward. Per-group `ncl groups config update 
 
 - **Container dies at boot, channel silent:** `grep 'Container exited non-zero' logs/nanoclaw.error.log` — the `stderrTail` carries the reason (e.g. `Unknown provider: codex. Registered: claude` means the barrels aren't wired in the running build).
 - **In-channel `Error: spawn codex ENOENT` on every message:** the image predates the manifest entry — re-run `./container/build.sh`.
-- **Auth errors mid-conversation:** the vault secret is missing or stale — re-run `pnpm exec tsx setup/index.ts --step provider-auth codex` (subscription re-login updates the vault copy).
+- **Auth errors mid-conversation:** a stale ChatGPT login is replaced with `pnpm exec tsx scripts/codex-auth.ts --reauth` (**Recover a ChatGPT login**); a missing one is created with `pnpm exec tsx setup/index.ts --step provider-auth codex`.

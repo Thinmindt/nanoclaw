@@ -421,6 +421,40 @@ describe('gateway seam adapter', () => {
     ).toThrow('only the ChatGPT subscription OAuth profile');
   });
 
+  // A provider's re-sign-in (Codex's --reauth) reaches an entry the adapter's
+  // `onecli secrets create` stored, not one this connection created.
+  it('replaces a ChatGPT login stored by the CLI under its id, with the account id in tokens.account_id', async () => {
+    const writes: Array<[string, Record<string, unknown>]> = [];
+    gateway(
+      () => [
+        {
+          id: 'cli-created-id',
+          name: chatgpt.name,
+          type: 'openai',
+          typeLabel: 'OpenAI',
+          hostPattern: 'chatgpt.com',
+          pathPattern: null,
+          valueSource: 'inline',
+          opRef: null,
+          scope: 'project',
+          injectionConfig: null,
+          metadata: { authMode: 'oauth', accountId: 'ws-old' },
+        },
+      ],
+      (init, url) => writes.push([url, JSON.parse(init.body as string)]),
+    );
+    const connection = createProviderCredentialConnection(chatgpt);
+    expect(await connection.find()).toEqual({ reusable: true });
+    await connection.save({ profile: 'chatgpt', accessToken: 'a', refreshToken: 'r', accountId: 'ws-new' });
+    expect(writes.map(([url, body]) => [url, Object.keys(body)])).toEqual([
+      ['https://vault.example/v1/secrets/cli-created-id', ['value']],
+    ]);
+    // Only what is sent is asserted. That OneCLI 1.42.0 rederives metadata.authMode and
+    // metadata.accountId from this encoded value on a PATCH is an expectation the live
+    // re-sign-in checks, not something this mock shows.
+    expect(JSON.parse(writes[0][1].value as string).tokens.account_id).toBe('ws-new');
+  });
+
   it('rejects a string value for an api-key connection given an object and vice versa', async () => {
     gateway(() => []);
     const connection = createProviderCredentialConnection(key());

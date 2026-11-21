@@ -50,6 +50,7 @@ rm -f src/providers/codex.ts \
       setup/providers/codex.ts \
       setup/providers/codex.test.ts \
       setup/providers/codex-registration.test.ts \
+      scripts/codex-auth.ts \
       .github/workflows/codex-smoke.yml
 ```
 

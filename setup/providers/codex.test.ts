@@ -34,12 +34,17 @@ vi.mock('@clack/prompts', async (original) => ({
 
 import * as setupLog from '../logs.js';
 import { upsertEnvVar } from '../set-env.js';
+import type { GatewayCredentialConnection, ProviderCredentialStore } from '../gateways/credential-store.js';
 import {
   buildCodexFailurePrompt,
+  codexChatGptTarget,
   offerCodexFailureAssist,
+  parseCodexAuthArgs,
+  readCodexLogin,
   runCodexApiKeyAuth,
   runCodexInstallCheck,
   runCodexLoginAuth,
+  runCodexReauth,
   storeFailureMessage,
   verifyCodexInstall,
 } from './codex.js';
@@ -195,6 +200,175 @@ describe('runCodexLoginAuth', () => {
     await runCodexLoginAuth('browser', { has: async () => false, save: vi.fn() });
 
     expect(upsertEnvVar).toHaveBeenCalledWith('CODEX_CHATGPT_PLAN', 'plus');
+  });
+});
+
+describe('parseCodexAuthArgs', () => {
+  it('runs the setup step with no arguments and re-signs in by browser by default', () => {
+    expect(parseCodexAuthArgs([])).toBeNull();
+    expect(parseCodexAuthArgs(['--reauth'])).toEqual({ method: 'browser' });
+    expect(parseCodexAuthArgs(['--reauth', '--method', 'device'])).toEqual({ method: 'device' });
+    expect(parseCodexAuthArgs(['--reauth', '--method', 'browser'])).toEqual({ method: 'browser' });
+  });
+
+  it.each([
+    ['--method', 'device'],
+    ['--reauth', '--method'],
+    ['--reauth', '--method', 'api'],
+    ['--reauth', 'extra'],
+  ])('refuses %j with the usage line', (...args) => {
+    expect(() => parseCodexAuthArgs(args)).toThrow('Usage: codex-auth.ts');
+  });
+});
+
+const idToken = (plan: string) =>
+  `e30.${Buffer.from(JSON.stringify({ 'https://api.openai.com/auth': { chatgpt_plan_type: plan } })).toString('base64url')}.c2ln`;
+const codexAuthJson = (tokens: Record<string, unknown> = {}) => ({
+  auth_mode: 'chatgpt',
+  OPENAI_API_KEY: null,
+  tokens: {
+    access_token: 'access-fixture',
+    refresh_token: 'refresh-fixture',
+    account_id: 'ws-fixture',
+    id_token: idToken('pro'),
+    ...tokens,
+  },
+});
+
+describe('readCodexLogin', () => {
+  it("maps Codex's auth.json to the ChatGPT profile and its plan", () => {
+    expect(readCodexLogin(codexAuthJson())).toEqual({
+      credential: {
+        profile: 'chatgpt',
+        accessToken: 'access-fixture',
+        refreshToken: 'refresh-fixture',
+        accountId: 'ws-fixture',
+      },
+      plan: 'pro',
+    });
+    expect(readCodexLogin(codexAuthJson({ id_token: 'not-a-jwt' })).plan).toBeUndefined();
+  });
+
+  it.each([
+    ['an API-key login', { auth_mode: 'apikey', OPENAI_API_KEY: 'sk-fixture', tokens: null }, 'access_token'],
+    ['no account id', codexAuthJson({ account_id: '' }), 'account_id'],
+    ['a multiline refresh token', codexAuthJson({ refresh_token: 'refresh-secret-line\nsecond' }), 'refresh_token'],
+    ['no object at all', null, 'access_token'],
+  ])('refuses %s, naming the field and never its value', (_case, authJson, field) => {
+    expect(() => readCodexLogin(authJson)).toThrow(new RegExp(`no usable ${field}`));
+    try {
+      readCodexLogin(authJson);
+    } catch (err) {
+      expect(String(err)).not.toContain('secret');
+      expect(String(err)).not.toContain('sk-fixture');
+    }
+  });
+});
+
+describe('runCodexReauth', () => {
+  function fakeGateway(stored: { reusable: boolean } | null) {
+    let home: string | undefined;
+    const login = {
+      find: vi.fn(async () => stored),
+      keep: vi.fn(async () => {}),
+      save: vi.fn<GatewayCredentialConnection['save']>(async () => {
+        // The live login file is gone before the gateway wait begins.
+        expect(fs.existsSync(home!)).toBe(false);
+      }),
+    };
+    const connection = vi.fn(() => login);
+    const store: ProviderCredentialStore = { has: vi.fn(), save: vi.fn(), connection };
+    const signIn = vi.fn(async (_method: string, loginHome: string, authJson: unknown = codexAuthJson()) => {
+      home = loginHome;
+      fs.writeFileSync(path.join(loginHome, 'auth.json'), JSON.stringify(authJson));
+      return 0;
+    });
+    return { store, login, connection, signIn, home: () => home };
+  }
+
+  afterEach(() => {
+    vi.mocked(upsertEnvVar).mockClear();
+    vi.mocked(setupLog.step).mockClear();
+  });
+
+  it('replaces the stored Codex login through the connection and records the plan', async () => {
+    const gw = fakeGateway({ reusable: true });
+    await runCodexReauth('device', { store: gw.store, signIn: gw.signIn });
+
+    expect(gw.connection).toHaveBeenCalledWith(codexChatGptTarget());
+    expect(codexChatGptTarget()).toMatchObject({ name: 'Codex', kind: 'oauth', host: 'chatgpt.com' });
+    expect(gw.signIn).toHaveBeenCalledWith('device', expect.any(String));
+    expect(gw.home()).not.toBe(path.join(os.homedir(), '.codex'));
+    expect(gw.login.save).toHaveBeenCalledWith({
+      profile: 'chatgpt',
+      accessToken: 'access-fixture',
+      refreshToken: 'refresh-fixture',
+      accountId: 'ws-fixture',
+    });
+    expect(gw.store.save).not.toHaveBeenCalled();
+    expect(upsertEnvVar).toHaveBeenCalledWith('CODEX_CHATGPT_PLAN', 'pro');
+  });
+
+  it('replaces a login the gateway reports as not reusable, such as an expired one', async () => {
+    const gw = fakeGateway({ reusable: false });
+    await runCodexReauth('browser', { store: gw.store, signIn: gw.signIn });
+    expect(gw.login.save).toHaveBeenCalledOnce();
+  });
+
+  it('refuses before signing in when there is no stored login to replace', async () => {
+    const gw = fakeGateway(null);
+    await expect(runCodexReauth('browser', { store: gw.store, signIn: gw.signIn })).rejects.toThrow(
+      /No Codex ChatGPT login is stored.*provider-auth codex/,
+    );
+    expect(gw.signIn).not.toHaveBeenCalled();
+    expect(gw.login.save).not.toHaveBeenCalled();
+  });
+
+  it('refuses before signing in when the gateway cannot replace in place', async () => {
+    const gw = fakeGateway({ reusable: true });
+    const { connection: _none, ...store } = gw.store;
+    await expect(runCodexReauth('browser', { store, signIn: gw.signIn })).rejects.toThrow(/cannot replace/);
+    expect(gw.signIn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['the sign-in exits non-zero', async () => 130, /did not complete/],
+    ['no auth.json is written', async () => 0, /no readable auth.json/],
+    [
+      'the login has no account id',
+      async (_m: string, home: string) => {
+        fs.writeFileSync(path.join(home, 'auth.json'), JSON.stringify(codexAuthJson({ account_id: null })));
+        return 0;
+      },
+      /no usable account_id/,
+    ],
+  ])('removes the login home and saves nothing when %s', async (_case, signIn, error) => {
+    const gw = fakeGateway({ reusable: true });
+    let home = '';
+    const tracked = async (method: string, loginHome: string) => {
+      home = loginHome;
+      return signIn(method, loginHome);
+    };
+    await expect(runCodexReauth('browser', { store: gw.store, signIn: tracked })).rejects.toThrow(error);
+    expect(fs.existsSync(home)).toBe(false);
+    expect(gw.login.save).not.toHaveBeenCalled();
+    expect(upsertEnvVar).not.toHaveBeenCalled();
+  });
+
+  it('reports a gateway failure by its masked cause and keeps the old plan', async () => {
+    const gw = fakeGateway({ reusable: true });
+    gw.login.save.mockRejectedValueOnce(new Error(`rejected ${'T'.repeat(40)}`));
+    await expect(runCodexReauth('browser', { store: gw.store, signIn: gw.signIn })).rejects.toThrow(
+      "Couldn't replace the Codex login in the gateway: rejected [redacted]",
+    );
+    expect(fs.existsSync(gw.home()!)).toBe(false);
+    expect(upsertEnvVar).not.toHaveBeenCalled();
+    expect(setupLog.step).toHaveBeenCalledWith(
+      'auth',
+      'failed',
+      expect.any(Number),
+      expect.objectContaining({ MODE: 'reauth', ERROR: 'gateway_store_failed' }),
+    );
   });
 });
 
