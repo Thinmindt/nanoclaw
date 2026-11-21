@@ -6,14 +6,25 @@ import type { ProviderFileDiagnostic, ProviderFileTransformer } from './provider
 
 const CLAUDE_SETTINGS_FILE = 'settings.json';
 const PRE_COMPACT_COMMAND = 'bun /app/src/compact-instructions.ts';
-const LEGACY_MEMORY_SESSION_START_COMMAND = 'bun /app/src/memory-hook.ts';
+// The runner now passes the memory hook in the SDK's flag-level settings, so a
+// command entry for either script in this file would inject memory a second time.
+const MEMORY_SESSION_START_COMMANDS = new Set(['bun /app/src/memory/hook.ts', 'bun /app/src/memory-hook.ts']);
+// Extra mounts are no longer added directories, so the switch that loads
+// instruction files from them has nothing to do and is removed.
+const ADDED_DIRECTORIES_INSTRUCTIONS_ENV = 'CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD';
+// Claude Code's own default output style, seeded only when the key is missing
+// so a seat's own choice stays. With a named style (such as Concise) Claude
+// Code adds a style message to every request, and the conversation is then not
+// read back from the prompt cache. The concise instruction is in the agent's
+// CLAUDE.md (container/CLAUDE.md, Communication), in the cached prefix.
+const DEFAULT_OUTPUT_STYLE = 'default';
 
 export const CLAUDE_DEFAULT_SETTINGS =
   JSON.stringify(
     {
       autoMemoryEnabled: false,
+      outputStyle: DEFAULT_OUTPUT_STYLE,
       env: {
-        CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD: '1',
         CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1',
       },
       hooks: {
@@ -37,7 +48,9 @@ export const CLAUDE_DEFAULT_SETTINGS =
  * Seed or reconcile `settings.json` in the Claude state directory. The
  * directory is a read-write mount, so the file is reached through the
  * directory's descriptor: a symlink or FIFO planted under its name is refused
- * and the settings are left alone. Returns what was done.
+ * and the settings are left alone. Returns what was done. This is the path for
+ * providers with no host contract; the contract path
+ * (provider-contracts/realize.ts) moves an unusable file aside instead.
  */
 export function prepareClaudeMemorySettings(claudeDir: string): 'created' | 'reconciled' | 'unchanged' {
   const settingsFile = path.join(claudeDir, CLAUDE_SETTINGS_FILE);
@@ -54,6 +67,10 @@ export function prepareClaudeMemorySettings(claudeDir: string): 'created' | 'rec
       return 'created';
     }
     const result = claudeSettingsTransformer.transform(current, settingsFile);
+    if (result.kind === 'invalid') {
+      log.warn('Claude settings are invalid; leaving them unchanged', { settingsFile, reason: result.reason });
+      return 'unchanged';
+    }
     emitDiagnostics(result.diagnostics);
     if (result.kind === 'unchanged') return 'unchanged';
     dir.replaceFile(CLAUDE_SETTINGS_FILE, result.content);
@@ -67,38 +84,32 @@ export function prepareClaudeMemorySettings(claudeDir: string): 'created' | 'rec
 }
 
 export const claudeSettingsTransformer: ProviderFileTransformer = {
-  transform(current, settingsFile) {
+  transform(current) {
     let parsed: unknown;
     try {
       parsed = JSON.parse(current);
-    } catch (err) {
-      return {
-        kind: 'unchanged',
-        diagnostics: [failedDiagnostic(err, settingsFile)],
-      };
+    } catch {
+      return { kind: 'invalid', reason: 'does not parse as JSON' };
     }
-    if (!isRecord(parsed)) {
-      return {
-        kind: 'unchanged',
-        diagnostics: [
-          {
-            level: 'warn',
-            message: 'Claude settings root is not an object; leaving it unchanged',
-            fields: { settingsFile },
-          },
-        ],
-      };
-    }
+    if (!isRecord(parsed)) return { kind: 'invalid', reason: 'root is not a JSON object' };
 
     let changed = false;
     if (parsed.autoMemoryEnabled !== false) {
       parsed.autoMemoryEnabled = false;
       changed = true;
     }
+    if (parsed.outputStyle === undefined) {
+      parsed.outputStyle = DEFAULT_OUTPUT_STYLE;
+      changed = true;
+    }
 
     const env = isRecord(parsed.env) ? parsed.env : {};
     if (env.CLAUDE_CODE_DISABLE_AUTO_MEMORY !== '1') {
       env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
+      changed = true;
+    }
+    if (ADDED_DIRECTORIES_INSTRUCTIONS_ENV in env) {
+      delete env[ADDED_DIRECTORIES_INSTRUCTIONS_ENV];
       changed = true;
     }
     if (parsed.env !== env) {
@@ -108,9 +119,7 @@ export const claudeSettingsTransformer: ProviderFileTransformer = {
 
     const hooks = isRecord(parsed.hooks) ? parsed.hooks : {};
     const existingSessionStart = Array.isArray(hooks.SessionStart) ? hooks.SessionStart : [];
-    const nextSessionStart = existingSessionStart
-      .map(removeLegacyNanoClawMemoryHook)
-      .filter((entry) => entry !== undefined);
+    const nextSessionStart = existingSessionStart.map(removeMemoryHook).filter((entry) => entry !== undefined);
     if (JSON.stringify(nextSessionStart) !== JSON.stringify(existingSessionStart)) {
       if (nextSessionStart.length > 0) hooks.SessionStart = nextSessionStart;
       else delete hooks.SessionStart;
@@ -152,11 +161,11 @@ function emitDiagnostic(diagnostic: ProviderFileDiagnostic): void {
   log[diagnostic.level](diagnostic.message, diagnostic.fields);
 }
 
-function removeLegacyNanoClawMemoryHook(value: unknown): unknown {
+function removeMemoryHook(value: unknown): unknown {
   if (!isRecord(value) || !Array.isArray(value.hooks)) return value;
   const remaining = value.hooks.filter((hook) => {
     if (!isRecord(hook)) return true;
-    return hook.command !== LEGACY_MEMORY_SESSION_START_COMMAND;
+    return typeof hook.command !== 'string' || !MEMORY_SESSION_START_COMMANDS.has(hook.command);
   });
   return remaining.length > 0 ? { ...value, hooks: remaining } : undefined;
 }

@@ -75,7 +75,7 @@ describe('provider runtime contracts', () => {
     expect(typeof contract?.configuration.mcpServers).toBe('function');
     expect(typeof contract?.configuration.memory).toBe('object');
     expect(asConstant(contract?.configuration.memory)).toEqual({ CLAUDE_CODE_DISABLE_AUTO_MEMORY: '1' });
-    expect(typeof contract?.lifecycle?.memorySessionHookRegistration).toBe('function');
+    expect(contract?.lifecycle).toBeUndefined();
     expect(typeof contract?.history?.readTrace).toBe('function');
     expect(contract?.history?.afterExchange).toBeUndefined();
     expect(contract?.textDelivery).toBe('mid-turn-complete');

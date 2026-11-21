@@ -56,7 +56,8 @@ async function drive(options: ProviderOptions): Promise<void> {
   }
 }
 
-const POLICY_SETTINGS = { syncClaudeAiSkills: false, syncClaudeAiPlugins: false };
+// The memory hook rides the same settings (claude.memory-hook.test.ts).
+const POLICY_SETTINGS = { syncClaudeAiSkills: false, syncClaudeAiPlugins: false, hooks: expect.any(Object) };
 
 describe('flag-level settings: claude.ai sync opt-out always, fastMode when enabled', () => {
   it('sends settings.fastMode alongside the policy settings when enabled', async () => {

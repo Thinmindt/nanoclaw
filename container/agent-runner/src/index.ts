@@ -19,7 +19,6 @@
  *   /home/node/.claude/ ← Claude SDK state + skill symlinks (RW)
  */
 
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -79,20 +78,8 @@ async function main(): Promise<void> {
     taskId ? { kind: 'task', taskId } : { kind: 'chat' },
   );
 
-  // Discover additional directories mounted at /workspace/extra/*
-  const additionalDirectories: string[] = [];
-  const extraBase = '/workspace/extra';
-  if (fs.existsSync(extraBase)) {
-    for (const entry of fs.readdirSync(extraBase)) {
-      const fullPath = path.join(extraBase, entry);
-      if (fs.statSync(fullPath).isDirectory()) {
-        additionalDirectories.push(fullPath);
-      }
-    }
-    if (additionalDirectories.length > 0) {
-      log(`Additional directories: ${additionalDirectories.join(', ')}`);
-    }
-  }
+  // Extra mounts under /workspace/extra are data: none is handed to the SDK
+  // as an added directory, so nothing in one loads as instructions or skills.
 
   // MCP server path — bun runs TS directly; no tsc build step in-image.
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -122,7 +109,6 @@ async function main(): Promise<void> {
     assistantName: config.assistantName || undefined,
     mcpServers,
     env: { ...process.env },
-    additionalDirectories: additionalDirectories.length > 0 ? additionalDirectories : undefined,
     model: config.model,
     effort: config.effort,
     speed: config.speed,

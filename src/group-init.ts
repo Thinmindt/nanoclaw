@@ -12,9 +12,10 @@ import { providerProvidesAgentSurfaces } from './providers/provider-container-re
 import type { AgentGroup } from './types.js';
 
 /**
- * Initialize the on-disk filesystem state for an agent group. Idempotent —
- * every step is gated on the target not already existing, so re-running on
- * an already-initialized group is a no-op.
+ * Initialize the on-disk filesystem state for an agent group. Idempotent:
+ * re-running on a healthy, already-initialized group changes nothing. A Claude
+ * settings file that is not a JSON object in a regular file is moved aside on
+ * every call (provider-contracts/realize.ts).
  *
  * Called once per group lifetime at creation, or defensively from
  * `buildMounts()` for groups that pre-date this code path.

@@ -27,7 +27,9 @@ export interface ProviderFileDiagnostic {
 
 export type ProviderFileTransformResult =
   | { kind: 'unchanged'; diagnostics?: readonly ProviderFileDiagnostic[] }
-  | { kind: 'replace'; content: string; diagnostics?: readonly ProviderFileDiagnostic[] };
+  | { kind: 'replace'; content: string; diagnostics?: readonly ProviderFileDiagnostic[] }
+  /** The content cannot be reconciled; core moves the file aside and writes the template. */
+  | { kind: 'invalid'; reason: string };
 
 export interface ProviderFileTransformer {
   transform(current: string, filePath: string): ProviderFileTransformResult;

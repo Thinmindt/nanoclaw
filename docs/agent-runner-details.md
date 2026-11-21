@@ -14,7 +14,7 @@ The boundary: the agent-runner decides **what** to send and **what to do** with 
 
 ## AgentProvider Interface
 
-Provider-wide settings (MCP servers, env, additional directories, model, effort,
+Provider-wide settings (MCP servers, env, model, effort,
 assistant name) are passed to the provider **constructor** via `ProviderOptions`, not
 per query. `QueryInput` carries only what changes turn to turn: the prompt, the
 continuation token to resume, the working directory, and system context to inject.
@@ -46,7 +46,6 @@ interface ProviderOptions {
   assistantName?: string;
   mcpServers?: Record<string, McpServerConfig>;
   env?: Record<string, string | undefined>;
-  additionalDirectories?: string[];
   model?: string;   // alias (sonnet/opus/haiku) or full model ID
   effort?: string;  // low | medium | high | xhigh | max
 }
@@ -130,14 +129,15 @@ What a provider declares:
   than restating the shape, so a field core adds reaches every provider through the type.
 - `configuration.tone` (optional) — `{ default, toSettings(tone) }`. Core maps the
   declared default into provider-native settings and passes them to the factory as
-  `configuration.tone`. Claude declares `default` (Claude Code's own style; a named style such as `Concise`
-  defeats prompt caching, so the concise instruction lives in `container/CLAUDE.md`) → `outputStyle` and seeds it only
-  when absent in the group's native user `settings.json` during session-hook setup.
-  Existing values are preserved; project/local settings retain native precedence.
-  Claude sends no tone override through SDK query settings. Codex declares `friendly`
+  `configuration.tone`. Claude declares no tone: the host seeds `outputStyle: "default"` (Claude Code's own style; a
+  named style such as `Concise` defeats prompt caching, so the concise instruction lives in `container/CLAUDE.md`)
+  into the group's user `settings.json` only when the key is absent (`src/migrate-claude-memory-settings.ts`).
+  Existing values are preserved; project/local settings retain native precedence. Codex declares `friendly`
   → thread `personality`. Providers that omit tone keep their existing behavior.
 - `lifecycle` — `memorySessionHookRegistration` (runs when core registers the memory hook)
-  and `beforeQuery` (runs before each query).
+  and `beforeQuery` (runs before each query). Claude declares neither: it passes the
+  memory hook in the SDK's flag-level `settings`, so the runner reads and writes no Claude
+  settings file.
 - `history` — `afterExchange` (the factory wraps `onExchangeComplete` with it) and
   `readTrace` (what `/upload-trace` uploads). Anything else a provider does with its own
   transcript — Claude's pre-compact archive and continuation rotation, for example — is
@@ -180,13 +180,13 @@ Only the `claude` provider ships in trunk. The Codex and OpenCode sections below
 
 Wraps `@anthropic-ai/claude-agent-sdk`'s `query()`.
 
-The provider takes its settings (`mcpServers`, `env`, `additionalDirectories`,
+The provider takes its settings (`mcpServers`, `env`,
 `model`, `effort`, `assistantName`) in its constructor via `ProviderOptions`; `query()`
 only reads the per-turn `QueryInput`.
 
 ```typescript
 class ClaudeProvider implements AgentProvider {
-  // ...constructor stores options.mcpServers, .env, .additionalDirectories,
+  // ...constructor stores options.mcpServers, .env,
   //    .model, .effort, .assistantName...
 
   query(input: QueryInput): AgentQuery {
@@ -197,7 +197,6 @@ class ClaudeProvider implements AgentProvider {
       prompt: stream,
       options: {
         cwd: input.cwd,
-        additionalDirectories: this.additionalDirectories,
         resume: input.continuation,
         pathToClaudeCodeExecutable: '/pnpm/claude',
         systemPrompt: input.systemContext?.instructions
@@ -255,7 +254,7 @@ SDK message (so the idle timer stays honest) and maps recognized messages to `Pr
 - **PostToolUse / PostToolUseFailure** hooks clear the in-flight tool
 - **PreCompact** hook archives the transcript to `conversations/` before compaction
 - `maybeRotateContinuation` drops an oversized/aged transcript (default caps 12 MB / 14 days, both operator-overridable) so a cold container isn't killed reloading days of `.jsonl` before the host idle ceiling; `isSessionInvalid` clears a continuation whose transcript is gone
-- `additionalDirectories` for multi-directory access
+- No `additionalDirectories`: an extra mount under `/workspace/extra` is data. The file tools and the shell reach it in bypass mode; nothing in it loads as instructions, skills, commands or subagents
 
 ### Codex Provider
 
@@ -876,7 +875,6 @@ The provider name comes from the `provider` key in `/workspace/agent/container.j
 - MCP servers are local processes or remote Streamable HTTP endpoints managed by the provider via `mcpServers`
 - The MCP server binary is shared across providers — same tools, same DB access
 - Project-document loading — the host composes `/workspace/agent/CLAUDE.md` and Claude Code loads it via the `project` setting source; the agent-runner contributes only the runtime addendum from `buildSystemPromptAddendum`
-- Additional directories discovery (`/workspace/extra/*`)
 - Logging via stderr (`[agent-runner] ...`)
 
 ## Related Documents
