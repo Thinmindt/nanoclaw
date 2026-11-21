@@ -423,7 +423,7 @@ describe('gateway seam adapter', () => {
 
   // A provider's re-sign-in (Codex's --reauth) reaches an entry the adapter's
   // `onecli secrets create` stored, not one this connection created.
-  it('replaces a ChatGPT login stored by the CLI under its id, in the shape OneCLI reads the account from', async () => {
+  it('replaces a ChatGPT login stored by the CLI under its id, with the account id in tokens.account_id', async () => {
     const writes: Array<[string, Record<string, unknown>]> = [];
     gateway(
       () => [
@@ -449,7 +449,9 @@ describe('gateway seam adapter', () => {
     expect(writes.map(([url, body]) => [url, Object.keys(body)])).toEqual([
       ['https://vault.example/v1/secrets/cli-created-id', ['value']],
     ]);
-    // OneCLI 1.42.0 rederives metadata.accountId from tokens.account_id on a value PATCH.
+    // Only what is sent is asserted. That OneCLI 1.42.0 rederives metadata.authMode and
+    // metadata.accountId from this encoded value on a PATCH is an expectation the live
+    // re-sign-in checks, not something this mock shows.
     expect(JSON.parse(writes[0][1].value as string).tokens.account_id).toBe('ws-new');
   });
 

@@ -189,8 +189,11 @@ This runs `codex login` in a throwaway `CODEX_HOME`, removes it once the login
 file is read, and replaces the value of the stored `Codex` login through the
 gateway's provider credential connection. The entry keeps its id, so every
 agent granted it keeps its grant. The login's ChatGPT plan is written to
-`CODEX_CHATGPT_PLAN` in `.env`; the host reads it at start, so a changed plan
-reaches agents after a host restart. Retry the failed request.
+`CODEX_CHATGPT_PLAN` in `.env`. The host reads the plan at start and writes it,
+with the workspace id, into an agent's login stand-in when its container spawns,
+so a changed plan or workspace reaches an agent at its next container spawn
+after a host restart. The same account and plan need neither restart. Retry the
+failed request.
 
 It only replaces: with no stored ChatGPT login, or a gateway without provider
 credential connections, it stops and points to the setup step above, which

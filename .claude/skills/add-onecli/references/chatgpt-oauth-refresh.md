@@ -15,8 +15,13 @@ provider's manual reauthentication:
   (`pnpm exec tsx scripts/opencode-auth.ts --reauth`).
 
 Both replace the stored login's value under its existing id, so agent grants
-are kept, and OneCLI rederives the login's account id from the new value. The
-same procedures also handle revoked credentials.
+are kept. The value they store is the adapter's encoding (access token, refresh
+token and account id), not Codex's whole `auth.json`. OneCLI is expected to
+rederive the entry's `metadata.authMode` and `metadata.accountId` from that
+value; the gateway does not document this, and it is unproven for this shape
+until a live re-sign-in shows the metadata unchanged and a freshly spawned agent
+gets no placeholder account id warning. The same procedures also handle revoked
+credentials.
 
 Do not assume a gateway upgrade resolves unattended ChatGPT operation.
 OneCLI 1.43 and later remove the agent-grant API used by this NanoClaw version, so
