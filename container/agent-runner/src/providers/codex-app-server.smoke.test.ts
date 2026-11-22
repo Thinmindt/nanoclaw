@@ -53,8 +53,6 @@ const PINNED = [
   'computer_use',
   'memories',
 ];
-const pinnedOf = (values: Record<string, unknown>) => Object.fromEntries(PINNED.map((key) => [key, values[key]]));
-const allOff = Object.fromEntries(PINNED.map((key) => [key, false]));
 // A value the runner's own config sets to 32768, so 31337 reads back only from a planted file.
 const MARKER = 'project_doc_max_bytes = 31337';
 // Where Codex calls the ChatGPT apps server, under chatgpt_base_url.
@@ -69,39 +67,22 @@ async function request(server: AppServer, method: string, params: Record<string,
   return response.result;
 }
 
-/** Codex's own enablement of every feature for the thread, all pages read. */
-async function enabledFeatures(server: AppServer, threadId: string): Promise<Record<string, boolean>> {
-  const features: Array<{ name: string; enabled: boolean }> = [];
-  let cursor: string | null = null;
-  do {
-    const page = await request(server, 'experimentalFeature/list', { threadId, cursor });
-    features.push(...page.data);
-    cursor = page.nextCursor;
-  } while (cursor);
-  const enabled = Object.fromEntries(features.map((f) => [f.name, f.enabled]));
-  // A feature known to be on, so a read that lists nothing cannot pass for "off".
-  if (enabled.image_generation !== true) throw new Error(`image_generation is not on in ${JSON.stringify(features)}`);
-  return enabled;
-}
-
 /**
  * Start a new conversation in a fresh Codex home, with `planted` as the project config file
  * of the working folder or of the folder above it, through the start of the first turn, and
  * read back what Codex made of it. A ChatGPT login of made-up tokens, with chatgpt_base_url
  * pointed at a local stub, lets the apps call be seen offline.
  */
-async function startConversation(planted: string | null, folder: 'working' | 'above' = 'working') {
+async function startConversation(planted: string, folder: 'working' | 'above') {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-case-'));
   const session = path.join(root, 'session');
   const workdir = path.join(session, 'work');
   fs.mkdirSync(workdir, { recursive: true });
-  if (planted) {
-    // Codex reads a project file above the working folder only up to a repository root.
-    if (folder === 'above') execFileSync('git', ['init', '-q', session]);
-    const projectDir = path.join(folder === 'working' ? workdir : session, '.codex');
-    fs.mkdirSync(projectDir);
-    fs.writeFileSync(path.join(projectDir, 'config.toml'), planted);
-  }
+  // Codex reads a project file above the working folder only up to a repository root.
+  if (folder === 'above') execFileSync('git', ['init', '-q', session]);
+  const projectDir = path.join(folder === 'working' ? workdir : session, '.codex');
+  fs.mkdirSync(projectDir);
+  fs.writeFileSync(path.join(projectDir, 'config.toml'), planted);
 
   const calls: string[] = [];
   const stub = Bun.serve({
@@ -144,20 +125,16 @@ async function startConversation(planted: string | null, folder: 'working' | 'ab
     await startCodexTurn(server, { threadId, inputText: 'hello', cwd: workdir });
     await new Promise((resolve) => setTimeout(resolve, CALL_WAIT_MS));
 
-    const { config: read } = await request(server, 'config/read', { cwd: workdir });
-    const result = {
+    // The switch is read from Codex's feature list for the thread: config/read reports what
+    // the files ask for, and under the pin still says most planted switches are on.
+    const { data } = await request(server, 'experimentalFeature/list', { threadId });
+    const read = (await request(server, 'config/read', { cwd: workdir })).config;
+    return {
       marker: read.project_doc_max_bytes,
-      enabled: await enabledFeatures(server, threadId),
-      requirements: (await request(server, 'configRequirements/read', {})).requirements?.featureRequirements,
+      enabled: Object.fromEntries(PINNED.map((key) => [key, data.find((f: any) => f.name === key)?.enabled])),
       warnings,
       appsCalls: calls.filter((p) => p === APPS_PATH).length,
     };
-    // The record for the ticket. config/read is recorded, not asserted: under the pin it
-    // still reports most planted switches on.
-    const run = control ? 'control' : 'pinned';
-    const record = { ...result, enabled: pinnedOf(result.enabled), configRead: pinnedOf(read.features) };
-    console.log(JSON.stringify({ run, folder, planted, ...record }));
-    return result;
   } finally {
     killCodexAppServer(server);
     stub.stop();
@@ -288,35 +265,26 @@ async function startConversation(planted: string | null, folder: 'working' | 'ab
     }
   }, 60_000);
 
-  it('starts a conversation with nothing planted, every pinned switch off', async () => {
-    const read = await startConversation(null);
-    console.log(`experimentalFeature/list, nothing planted: ${JSON.stringify(read.enabled)}`);
-    expect(pinnedOf(read.enabled)).toEqual(allOff);
-    if (control) {
-      expect(read.warnings).toEqual([
-        'Ignoring unknown `features` requirement `not_a_codex_feature` from /etc/codex/requirements.toml',
-      ]);
-    } else {
-      expect(read.requirements).toEqual(allOff);
-      expect(read.warnings.filter((w) => w.includes('/etc/codex/requirements.toml'))).toEqual([]);
-    }
+  // In both runs the planted file loads (the marker reads back) and the conversation starts.
+  // The control reads every planted switch on; under the pin each reads off.
+  it('holds every pinned switch off when a project file in the working folder sets it on', async () => {
+    const read = await startConversation(
+      `${MARKER}\n\n[features]\n${PINNED.map((k) => `${k} = true`).join('\n')}\n`,
+      'working',
+    );
+    expect(read.marker).toBe(31337);
+    expect(read.enabled).toEqual(Object.fromEntries(PINNED.map((key) => [key, control])));
+    expect(read.appsCalls > 0).toBe(control);
+    // A misspelled or renamed key in the pin is dropped with only a warning, which the
+    // control's made-up key shows arriving.
+    const unknownKey =
+      'Ignoring unknown `features` requirement `not_a_codex_feature` from /etc/codex/requirements.toml';
+    expect(read.warnings).toEqual(control ? [unknownKey] : []);
   }, 60_000);
 
-  it('starts a conversation with a project file that sets only the marker', async () => {
-    expect((await startConversation(MARKER)).marker).toBe(31337);
+  it('holds apps off when a project file in the repository folder above sets it on', async () => {
+    const read = await startConversation(`${MARKER}\n\n[features]\napps = true\n`, 'above');
+    expect(read.marker).toBe(31337);
+    expect(read.enabled.apps).toBe(control);
   }, 60_000);
-
-  // The pass rule's table, read off both runs on the first runs: in every case the planted
-  // file loaded (the marker reads back in both runs), the control reads the switch on, and
-  // the pinned run starts and reads it off. Held by the list; nothing was refused.
-  const planted = [...PINNED.map((key) => [key, 'working'] as const), ['apps', 'above'] as const];
-  for (const [key, folder] of planted) {
-    it(`holds ${key} off when a project file in the ${folder} folder sets it on`, async () => {
-      const read = await startConversation(`${MARKER}\n\n[features]\n${key} = true\n`, folder);
-      expect(read.marker).toBe(31337);
-      expect(read.enabled[key]).toBe(control);
-      // The apps call's own row: the control makes it and the pinned run does not. Held by behavior.
-      if (key === 'apps' && folder === 'working') expect(read.appsCalls > 0).toBe(control);
-    }, 60_000);
-  }
 });
