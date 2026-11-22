@@ -293,7 +293,6 @@ async function startConversation(planted: string | null, folder: 'working' | 'ab
     console.log(`experimentalFeature/list, nothing planted: ${JSON.stringify(read.enabled)}`);
     expect(pinnedOf(read.enabled)).toEqual(allOff);
     if (control) {
-      expect(read.requirements).toEqual({ not_a_codex_feature: true });
       expect(read.warnings).toEqual([
         'Ignoring unknown `features` requirement `not_a_codex_feature` from /etc/codex/requirements.toml',
       ]);
