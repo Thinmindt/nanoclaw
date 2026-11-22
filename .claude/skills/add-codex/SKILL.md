@@ -65,11 +65,17 @@ A hook the agent writes in its Codex home or its workspace stays untrusted and n
 Web search is off the same way: `codex-requirements.toml`, installed root-owned at
 `/etc/codex/requirements.toml`, allows only the `disabled` mode, so Codex refuses any mode the
 agent's own `config.toml` asks for. Web search runs on OpenAI's side, where the egress gateway
-never sees the query.
+never sees the query. The same file pins off the eight feature switches the runner writes off
+(apps, plugins, remote plugins, the three browser-use switches, computer use and native memory),
+so a config file the agent writes cannot turn one back on; for a project config file the smoke
+test shows Codex holding the switch off, with no warning. A unit test fails when the pin and the runner's
+values differ, and a change to the pin takes an image rebuild. `codex-requirements.control.toml`
+is the smoke test's control: the same file with no switch pinned.
 
 ```nc:copy
 payload/container/agent-runner/src/providers/codex-hooks.json -> container/agent-runner/src/providers/codex-hooks.json
 payload/container/agent-runner/src/providers/codex-requirements.toml -> container/agent-runner/src/providers/codex-requirements.toml
+payload/container/agent-runner/src/providers/codex-requirements.control.toml -> container/agent-runner/src/providers/codex-requirements.control.toml
 payload/container/agent-runner/src/providers/codex.ts -> container/agent-runner/src/providers/codex.ts
 payload/container/agent-runner/src/providers/codex-app-server.ts -> container/agent-runner/src/providers/codex-app-server.ts
 payload/container/agent-runner/src/providers/codex.factory.test.ts -> container/agent-runner/src/providers/codex.factory.test.ts
@@ -160,7 +166,7 @@ pnpm exec tsx scripts/provider-contract-verifier.ts --required-declared codex
 
 The registration tests import only the real barrels — they go red if a barrel line is missing, a barrel fails to evaluate, or the payload is broken.
 
-None of those start the Codex binary. `codex-app-server.smoke.test.ts` does, in the built image and offline: it starts a thread on the pinned app-server and checks that only the image's hook runs, that it runs again after a compaction (against a localhost stub model, since Codex's own provider compacts remotely), that the binary reads apps, plugins, browser and computer use as off, and that a web search mode the agent asks for is refused. `.github/workflows/codex-smoke.yml` runs it when the pin, the Dockerfile or the runtime changes; its last step is the command to run it locally.
+None of those start the Codex binary. `codex-app-server.smoke.test.ts` does, in the built image and offline: it starts a thread on the pinned app-server and checks that only the image's hook runs, that it runs again after a compaction (against a localhost stub model, since Codex's own provider compacts remotely), that the binary reads apps, plugins, browser and computer use and memory as off, and that a web search mode the agent asks for is refused. Then it starts new conversations with a project config file that turns each pinned switch on, in the working folder (and for apps in the repository folder above it), and checks that Codex's feature list reads the switch off and, for apps, that no call reaches the apps server. `.github/workflows/codex-smoke.yml` runs it when the pin, the Dockerfile or the runtime changes, twice: on the image as built, and with `codex-requirements.control.toml` mounted over the pin (`CODEX_SMOKE_CONTROL=1`), where each planted switch must read on. Its last two steps are the commands to run it locally.
 
 ## Authenticate
 

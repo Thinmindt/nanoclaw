@@ -37,6 +37,7 @@ rm -f src/providers/codex.ts \
       container/agent-runner/src/providers/codex-app-server.smoke.test.ts \
       container/agent-runner/src/providers/codex-hooks.json \
       container/agent-runner/src/providers/codex-requirements.toml \
+      container/agent-runner/src/providers/codex-requirements.control.toml \
       container/agent-runner/src/providers/exchange-archive.ts \
       container/agent-runner/src/providers/exchange-archive.test.ts \
       container/agent-runner/src/providers/codex-registration.test.ts \
