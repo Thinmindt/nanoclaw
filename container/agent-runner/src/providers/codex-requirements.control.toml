@@ -1,0 +1,7 @@
+# The codex-smoke control run mounts this over /etc/codex/requirements.toml in place of
+# codex-requirements.toml: the same web-search line, and a features table that pins none
+# of the runner's switches. Codex warns about the made-up key, which shows the table was read.
+allowed_web_search_modes = ["disabled"]
+
+[features]
+not_a_codex_feature = true

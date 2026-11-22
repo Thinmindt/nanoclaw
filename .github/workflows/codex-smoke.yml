@@ -30,3 +30,11 @@ jobs:
             -v "$PWD/container/agent-runner/src:/app/src:ro" -w /app \
             --entrypoint bun "$(container_image_base):latest" \
             test src/providers/codex-app-server.smoke.test.ts
+      - name: Run it again with the control requirements file, which pins no feature
+        run: |
+          source setup/lib/install-slug.sh
+          docker run --rm --network none -e CODEX_SMOKE=1 -e CODEX_SMOKE_CONTROL=1 \
+            -v "$PWD/container/agent-runner/src/providers/codex-requirements.control.toml:/etc/codex/requirements.toml:ro" \
+            -v "$PWD/container/agent-runner/src:/app/src:ro" -w /app \
+            --entrypoint bun "$(container_image_base):latest" \
+            test src/providers/codex-app-server.smoke.test.ts

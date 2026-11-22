@@ -2,3 +2,18 @@
 # back to "disabled" whatever web search mode the agent's config.toml asks for; web search
 # comes back only by changing this file and rebuilding the image.
 allowed_web_search_modes = ["disabled"]
+
+# The feature switches the runner writes off in the agent's config.toml, pinned off here
+# so that no config file the agent writes, in its Codex home or in a project folder, turns
+# one back on. The two lists change together (codex-app-server.test.ts), and a change here
+# takes an image rebuild. Every top-level key goes above this table: a key written below
+# the header belongs to it.
+[features]
+apps = false
+plugins = false
+remote_plugin = false
+browser_use = false
+browser_use_full_cdp_access = false
+browser_use_external = false
+computer_use = false
+memories = false

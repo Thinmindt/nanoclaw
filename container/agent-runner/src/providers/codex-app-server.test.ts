@@ -239,6 +239,19 @@ describe('Codex config TOML', () => {
   });
 });
 
+// The image installs codex-requirements.toml as /etc/codex/requirements.toml, baked in,
+// while the runner source is mounted: a switch flipped in the runner alone would conflict
+// with the pin on every Codex seat.
+describe('Codex requirements pin', () => {
+  it('pins each feature switch to the value the runner writes; change both together and rebuild the image', () => {
+    const toml = (text: string) => Bun.TOML.parse(text) as { features: unknown };
+    const pin = toml(fs.readFileSync(new URL('./codex-requirements.toml', import.meta.url), 'utf-8'));
+    const written = toml(renderCodexConfigToml(buildCodexConfigPlan({}, {})));
+
+    expect(pin.features).toEqual(written.features);
+  });
+});
+
 // The image installs codex-hooks.json as /etc/codex/hooks.json, the one hook
 // Codex runs (codex-app-server.smoke.test.ts).
 describe('Codex managed hook', () => {
