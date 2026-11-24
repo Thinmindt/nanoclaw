@@ -340,6 +340,18 @@ describe('groups config (host-only)', () => {
     expect(JSON.parse((await getContainerConfig(GID))!.additional_mounts)).toEqual([]);
   });
 
+  it('stores readonly: false for --rw, the only row the mount check makes writable', async () => {
+    const GID = 'ag-mount-rw';
+    await createAgentGroup({ id: GID, name: 'w', folder: 'w', agent_provider: null, created_at: now() });
+    await ensureContainerConfig(GID);
+
+    const args = { id: GID, host: '/home/claw/scratch/w', container: 'scratch', rw: true };
+    await dispatch({ id: 'r1', command: 'groups-config-add-mount', args }, { caller: 'host' });
+    expect(JSON.parse((await getContainerConfig(GID))!.additional_mounts)).toEqual([
+      { hostPath: '/home/claw/scratch/w', containerPath: 'scratch', readonly: false },
+    ]);
+  });
+
   describe("--speed validates against the tiers the group's provider declares", () => {
     const GID = 'ag-speed';
     const speedOf = async (): Promise<string | null> => (await getContainerConfig(GID))!.speed;
