@@ -9,6 +9,7 @@
  * change, which still hands extra mounts to the CLI as added directories.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -164,6 +165,29 @@ function writeFixtures(): void {
   write(path.join(cwd, 'memory', 'system', 'definition.md'), '# Definition\n');
 }
 
+// A repository with its own instruction file and skill, cloned by the session
+// into a scratch mount: an extra mount beside the working folder, like
+// /workspace/extra/scratch beside /workspace/agent.
+const scratch = { instruction: 'MARKER_SCRATCH_INSTRUCTION', skill: 'MARKER_SCRATCH_SKILL' };
+const origin = path.join(root, 'origin.git');
+const clone = path.join(root, 'extra', 'scratch', 'run-1', 'src');
+
+function writeOrigin(): void {
+  const seed = path.join(root, 'seed');
+  write(path.join(seed, 'CLAUDE.md'), `${scratch.instruction}\n`);
+  write(
+    path.join(seed, '.claude', 'skills', 'scratch-skill', 'SKILL.md'),
+    `---\nname: scratch-skill\ndescription: ${scratch.skill}\n---\n\nBody.\n`,
+  );
+  write(path.join(seed, 'beside.txt'), 'SCRATCH_BESIDE\n');
+  const git = (...args: string[]) => execFileSync('git', ['-C', seed, ...args]);
+  git('init', '-q');
+  git('add', '.');
+  git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'FIXTURE_COMMIT');
+  execFileSync('git', ['clone', '-q', '--bare', seed, origin]);
+  fs.rmSync(seed, { recursive: true });
+}
+
 // The session touches the nested folder, then reads, edits and writes in the
 // mount and one folder down with the file tools, and views and writes with the shell.
 const touchScript = [
@@ -248,6 +272,7 @@ const requestFor = (bodies: string[], prompt: string) => bodies.find((b) => b.in
   const conversationsDir = process.env.NANOCLAW_CONVERSATIONS_DIR;
   beforeAll(() => {
     writeFixtures();
+    writeOrigin();
     server = serveStub();
     // Compaction archives the conversation; keep that under `root` too.
     process.env.NANOCLAW_CONVERSATIONS_DIR = path.join(root, 'conversations');
@@ -304,6 +329,54 @@ const requestFor = (bodies: string[], prompt: string) => bodies.find((b) => b.in
       fs.writeFileSync(path.join(mount, 'sub', 'data.txt'), 'down\n');
     }
   }, 180_000);
+
+  it('loads nothing from a clone in a scratch mount, before or after a compaction, edits and git', async () => {
+    const home = newSeat();
+    const inClone = (file: string) => path.join(clone, file);
+
+    // Clone, the control touch below the working folder, then a Read and a shell view beside the markers.
+    const touched = await session(
+      ['TOUCH'],
+      [
+        { name: 'Bash', input: { command: `git clone -q ${origin} ${clone}`, description: 'clone' } },
+        { name: 'Read', input: { file_path: path.join(cwd, 'nested', 'beside.txt') } },
+        { name: 'Read', input: { file_path: inClone('beside.txt') } },
+        { name: 'Bash', input: { command: `cd ${clone} && cat beside.txt`, description: 'view' } },
+      ],
+      home,
+    );
+    const compacted = await session(['/compact', 'AFTER_COMPACT'], [], home, touched.continuation);
+    // The file tools and git in the clone, then the delete from the working folder.
+    const worked = await session(
+      ['WORK'],
+      [
+        { name: 'Read', input: { file_path: inClone('beside.txt') } },
+        { name: 'Edit', input: { file_path: inClone('beside.txt'), old_string: 'SCRATCH', new_string: 'EDITED' } },
+        { name: 'Write', input: { file_path: inClone('new.txt'), content: 'new\n' } },
+        { name: 'Bash', input: { command: `git -C ${clone} status --short`, description: 'status' } },
+        { name: 'Bash', input: { command: `cd ${clone} && git log --format=%s`, description: 'log' } },
+        { name: 'Bash', input: { command: `cd ${cwd} && rm -rf ${clone}`, description: 'delete' } },
+      ],
+      home,
+      compacted.continuation,
+    );
+
+    // The control loads once touched, so loading in this session can be seen.
+    const afterControl = touched.requests.slice(touched.requests.indexOf(requestFor(touched.requests, BESIDE)));
+    for (const marker of Object.values(nested)) expect([marker, loaded(afterControl, marker)]).toEqual([marker, true]);
+    // The scratch markers: not loaded after the touches and the compaction, and still not after the work.
+    for (const marker of Object.values(scratch)) {
+      expect([marker, loaded([...touched.requests, ...compacted.requests], marker)]).toEqual([marker, false]);
+      expect([marker, loaded(worked.requests, marker)]).toEqual([marker, false]);
+    }
+    // Every tool ran with no denial: git saw the edit and the write, and the clone is gone.
+    const all = [...touched.requests, ...compacted.requests, ...worked.requests];
+    expect(all.some((b) => b.includes('"is_error":true'))).toBe(false);
+    expect(loaded(worked.requests, 'M beside.txt')).toBe(true);
+    expect(loaded(worked.requests, '?? new.txt')).toBe(true);
+    expect(loaded(worked.requests, 'FIXTURE_COMMIT')).toBe(true);
+    expect(fs.existsSync(clone)).toBe(false);
+  }, 300_000);
 
   // In production /clear is the runner dropping the continuation, so the next
   // query is a startup. /compact dispatches only as a resumed query's first
