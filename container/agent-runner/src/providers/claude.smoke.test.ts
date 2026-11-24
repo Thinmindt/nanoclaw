@@ -169,23 +169,20 @@ function writeFixtures(): void {
 // into a scratch mount: an extra mount beside the working folder, like
 // /workspace/extra/scratch beside /workspace/agent.
 const scratch = { instruction: 'MARKER_SCRATCH_INSTRUCTION', skill: 'MARKER_SCRATCH_SKILL' };
-const origin = path.join(root, 'origin.git');
+const origin = path.join(root, 'origin');
 const clone = path.join(root, 'extra', 'scratch', 'run-1', 'src');
 
 function writeOrigin(): void {
-  const seed = path.join(root, 'seed');
-  write(path.join(seed, 'CLAUDE.md'), `${scratch.instruction}\n`);
+  write(path.join(origin, 'CLAUDE.md'), `${scratch.instruction}\n`);
   write(
-    path.join(seed, '.claude', 'skills', 'scratch-skill', 'SKILL.md'),
+    path.join(origin, '.claude', 'skills', 'scratch-skill', 'SKILL.md'),
     `---\nname: scratch-skill\ndescription: ${scratch.skill}\n---\n\nBody.\n`,
   );
-  write(path.join(seed, 'beside.txt'), 'SCRATCH_BESIDE\n');
-  const git = (...args: string[]) => execFileSync('git', ['-C', seed, ...args]);
+  write(path.join(origin, 'beside.txt'), 'SCRATCH_BESIDE\n');
+  const git = (...args: string[]) => execFileSync('git', ['-C', origin, ...args]);
   git('init', '-q');
   git('add', '.');
   git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'FIXTURE_COMMIT');
-  execFileSync('git', ['clone', '-q', '--bare', seed, origin]);
-  fs.rmSync(seed, { recursive: true });
 }
 
 // The session touches the nested folder, then reads, edits and writes in the
@@ -334,12 +331,11 @@ const requestFor = (bodies: string[], prompt: string) => bodies.find((b) => b.in
     const home = newSeat();
     const inClone = (file: string) => path.join(clone, file);
 
-    // Clone, the control touch below the working folder, then a Read and a shell view beside the markers.
+    // Clone, then a Read and a shell view beside the markers. The control is the first case's (ii).
     const touched = await session(
       ['TOUCH'],
       [
         { name: 'Bash', input: { command: `git clone -q ${origin} ${clone}`, description: 'clone' } },
-        { name: 'Read', input: { file_path: path.join(cwd, 'nested', 'beside.txt') } },
         { name: 'Read', input: { file_path: inClone('beside.txt') } },
         { name: 'Bash', input: { command: `cd ${clone} && cat beside.txt`, description: 'view' } },
       ],
@@ -361,9 +357,6 @@ const requestFor = (bodies: string[], prompt: string) => bodies.find((b) => b.in
       compacted.continuation,
     );
 
-    // The control loads once touched, so loading in this session can be seen.
-    const afterControl = touched.requests.slice(touched.requests.indexOf(requestFor(touched.requests, BESIDE)));
-    for (const marker of Object.values(nested)) expect([marker, loaded(afterControl, marker)]).toEqual([marker, true]);
     // The scratch markers: not loaded after the touches and the compaction, and still not after the work.
     for (const marker of Object.values(scratch)) {
       expect([marker, loaded([...touched.requests, ...compacted.requests], marker)]).toEqual([marker, false]);

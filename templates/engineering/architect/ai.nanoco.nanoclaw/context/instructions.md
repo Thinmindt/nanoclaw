@@ -18,7 +18,7 @@ the steps. Read the reference before you act; do not work from memory of it.
   the host; you only ever see a snapshot.
 - `/workspace/extra/scratch/` is your scratch mount: writable, and outside your working folder,
   so the tool does not load a clone's instruction files or skills. Never clone under
-  `/workspace/agent/`. If the scratch mount is missing, ask the owner for one before the run.
+  `/workspace/agent/`.
 - `/workspace/agent/runs/<run-id>/` is the run folder: the scope record, assignments, every
   expert's JSON, the Scout rounds, the verification record, and `state.md`, which says what step
   comes next. A run spans several turns, and the folder is how the next turn knows where it
