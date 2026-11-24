@@ -103,5 +103,6 @@ same turn.
 ## Ending a run
 
 Deliver the report or verdict to the requester, save it as `report.md`,
-delete `/workspace/extra/scratch/<run-id>/`, and write `state.md` as `done`. The run folder stays as the
-audit trail; the Project Manager files the report on its side.
+delete `/workspace/extra/scratch/<run-id>/`, and write `state.md` as `done`.
+The run folder stays as the audit trail; the Project Manager files the report
+on its side.
