@@ -35,6 +35,22 @@ Both are committed. CI and the Dockerfile run `--frozen-lockfile` variants — a
 - **Host + global CLIs** (pnpm): `minimumReleaseAge: 4320` (3-day hold on new versions), `onlyBuiltDependencies` allowlist for postinstall scripts. See `pnpm-workspace.yaml` and `docs/SECURITY.md`.
 - **Agent-runner** (Bun): no release-age policy — Bun doesn't have an equivalent today. The defenses are `bun.lock` pinning plus a version-pinned Bun itself via a Dockerfile ARG (global CLIs are pinned separately in `container/cli-tools.json`). When bumping `@anthropic-ai/claude-agent-sdk` or any runtime dep, review the release date on npm and bump deliberately, not via `bun update`.
 
+## Bumping Claude Code
+
+Before a new version of the CLI (`@anthropic-ai/claude-code` in `container/cli-tools.json`) or of the agent SDK (`@anthropic-ai/claude-agent-sdk` in `container/agent-runner`) reaches a live seat, rebuild the image and re-run checks 1 to 3 below. They are in `container/agent-runner/src/providers/claude.smoke.test.ts`, which drives the CLI in the image through the runner's own call, in bypass mode, against a stub model; a file counts as loaded when its text reaches the model. CI does not run it. From `container/agent-runner`:
+
+```bash
+docker run --rm --init --network none -e CLAUDE_SMOKE=1 -v "$PWD/src:/app/src:ro" \
+  -v "$PWD/bunfig.toml:/app/bunfig.toml:ro" -w /app --entrypoint bun \
+  nanoclaw-agent-v2-<slug>:latest test src/providers/claude.smoke.test.ts
+```
+
+1. **Control.** An instruction file and a skill in a folder under the working folder load once the Read tool reads a file beside them.
+2. **The scratch mount loads nothing.** The same kind of files, with other text, in a clone in a scratch mount (an extra mount outside the working folder) do not load after a Read beside them, a shell call that changes into the clone and prints a file there, and a compaction, and still not after check 3.
+3. **The scratch mount works.** In the same conversation the file tools read, edit and write in the clone, git runs against it from outside and from inside, and the session deletes it while standing in the working folder, all with no prompt.
+
+A failure holds the bump. If check 2 fails, a seat's clones are no longer safe in its scratch mount, and that goes to the operator before anything else.
+
 ## Image build surface
 
 `container/Dockerfile` is a single-stage build on `node:22-slim`:
