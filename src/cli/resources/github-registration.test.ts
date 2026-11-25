@@ -82,8 +82,8 @@ const agent = (agentGroupId: string) =>
   ({ caller: 'agent', sessionId: 's', agentGroupId, messagingGroupId: 'm' }) as const;
 
 describe('github-* registration', () => {
-  it('registers the three commands through the real barrel, open to agents, without a resource', () => {
-    for (const name of ['github-repos', 'github-pr-status', 'github-issue-status']) {
+  it('registers the four commands through the real barrel, open to agents, without a resource', () => {
+    for (const name of ['github-repos', 'github-pr-status', 'github-issue-status', 'github-commit-status']) {
       const cmd = lookup(name);
       expect(cmd, name).toBeDefined();
       expect(cmd?.access).toBe('open');
@@ -133,10 +133,16 @@ describe('github-* registration', () => {
     expect(fs.existsSync(path.join(dir, 'args'))).toBe(false);
   });
 
-  it('refuses agent groups not listed in the configuration', async () => {
+  it('refuses agent groups not listed in the configuration, before any gateway call', async () => {
     configure();
+    fs.rmSync(path.join(dir, 'args'), { force: true });
     const cmd = lookup('github-issue-status')!;
     await expect(cmd.handler(cmd.parseArgs({ repo: 'demo' }), agent('ag-other'))).rejects.toThrow(/not allowed/);
+    const commit = lookup('github-commit-status')!;
+    await expect(
+      commit.handler(commit.parseArgs({ repo: 'demo', commit: 'abc1234' }), agent('ag-other')),
+    ).rejects.toThrow(/not allowed/);
+    expect(fs.existsSync(path.join(dir, 'args'))).toBe(false);
   });
 
   it('explains how to configure it when settings are missing', async () => {

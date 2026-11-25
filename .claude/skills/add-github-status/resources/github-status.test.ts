@@ -7,10 +7,14 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_BODY,
   MAX_COMMENTS,
+  commitStatus,
+  commitVerdict,
+  formatCommitStatus,
   formatPullStatus,
   gatewayFetcher,
   issueStatus,
   parseRepos,
+  parseRequiredChecks,
   plainText,
   pullStatus,
   readGithubStatusConfig,
@@ -27,6 +31,7 @@ const config: GithubStatusConfig = {
   repos: parseRepos('demo=owner/demo-repo,other=owner/other'),
   gatewayAgent: 'github-status-tool',
   agentGroups: new Set(['ag-pm']),
+  requiredChecks: new Map([['demo', ['gate']]]),
   onecliBin: '/bin/false',
 };
 
@@ -53,6 +58,17 @@ describe('parseRepos / readGithubStatusConfig', () => {
   it('refuses a malformed entry and a repeated name', () => {
     expect(() => parseRepos('bird=not-a-repo')).toThrow(/name=owner\/repo/);
     expect(() => parseRepos('a=x/y,a=x/z')).toThrow(/twice/);
+  });
+
+  it('reads the required checks as one line of JSON, names with commas whole', () => {
+    const lists = parseRequiredChecks(
+      '{"nanoclaw":["gate"],"lifting-log":["lint, format, shellcheck, tests","ktlint, phone and watch unit tests"]}',
+    );
+    expect(lists.get('nanoclaw')).toEqual(['gate']);
+    expect(lists.get('lifting-log')).toEqual(['lint, format, shellcheck, tests', 'ktlint, phone and watch unit tests']);
+    expect(parseRequiredChecks(undefined).size).toBe(0);
+    expect(() => parseRequiredChecks('nanoclaw=gate')).toThrow(/one line of JSON/);
+    expect(() => parseRequiredChecks('{"nanoclaw":"gate"}')).toThrow(/one line of JSON/);
   });
 
   it('is unconfigured when any required key is missing', () => {
@@ -232,6 +248,112 @@ describe('issueStatus', () => {
   it('refuses a pull request number in issue mode', async () => {
     const gh = fakeGithub({ '/repos/owner/demo-repo/issues/2': { number: 2, pull_request: {} } });
     await expect(issueStatus(config, gh.fetch, { repo: 'demo', number: 2 })).rejects.toThrow(/use pr-status/);
+  });
+});
+
+describe('commitStatus', () => {
+  const SHA = 'abc1234';
+  const CHECKS = `/repos/owner/demo-repo/commits/${SHA}/check-runs?filter=latest&per_page=100`;
+  const run = (name: string, conclusion: string | null, status = 'completed') => ({ name, status, conclusion });
+  const page = (runs: object[], total = runs.length) => ({ total_count: total, check_runs: runs });
+  const ask = (answers: Record<string, unknown>, cfg = config) =>
+    commitStatus(cfg, fakeGithub(answers).fetch, { repo: 'demo', commit: SHA });
+
+  it.each([
+    ['passed', [run('gate', 'success'), run('docs', 'skipped')], { state: 'passed', failed_names: [] }],
+    ['failed', [run('gate', 'success'), run('lint', 'neutral')], { state: 'failed', failed_names: ['lint'] }],
+    ['running', [run('gate', 'success'), run('lint', null, 'queued')], { state: 'running' }],
+    ['not run', [], { state: 'not run', failed_names: [] }],
+    [
+      'not run when only an unrelated check succeeded',
+      [run('lint', 'success')],
+      { state: 'not run', reason: 'required check gate not found' },
+    ],
+    [
+      'not run when the required check was skipped',
+      [run('gate', 'skipped')],
+      { state: 'not run', reason: 'required check gate skipped' },
+    ],
+    [
+      'failed when one of two runs with one name failed',
+      [run('gate', 'success'), run('gate', 'failure')],
+      { state: 'failed', failed_names: ['gate'] },
+    ],
+  ])('%s', async (_case, runs, expected) => {
+    expect(await ask({ [`${CHECKS}&page=1`]: page(runs) })).toMatchObject({ commit: SHA, ...expected });
+  });
+
+  it('reads every page: a failure on page two shows failed', async () => {
+    const first = Array.from({ length: 100 }, (_, i) => run(i ? `c${i}` : 'gate', 'success'));
+    const result = await ask({
+      [`${CHECKS}&page=1`]: page(first, 101),
+      [`${CHECKS}&page=2`]: page([run('late', 'failure')], 101),
+    });
+    expect(result).toMatchObject({ state: 'failed', failed_names: ['late'] });
+  });
+
+  it('never shows passed for a repository with no required checks', async () => {
+    const none = { ...config, requiredChecks: new Map() };
+    expect(await ask({ [`${CHECKS}&page=1`]: page([run('gate', 'success')]) }, none)).toMatchObject({
+      state: 'not run',
+      reason: 'no required checks configured',
+    });
+  });
+
+  it('is an error with no state when GitHub cannot be read', async () => {
+    const outage: Fetcher = async () => {
+      throw new Error('gateway call failed: timed out');
+    };
+    await expect(commitStatus(config, outage, { repo: 'demo', commit: SHA })).rejects.toThrow(
+      /^could not read: gateway call failed: timed out$/,
+    );
+    const unreadable = gatewayFetcher(config, async () => '<html>busy</html>\n200');
+    await expect(commitStatus(config, unreadable, { repo: 'demo', commit: SHA })).rejects.toThrow(/^could not read: /);
+  });
+
+  it('resolves a branch to its commit and labels the read time', async () => {
+    const full = 'f'.repeat(40);
+    const result = await commitStatus(
+      config,
+      fakeGithub({
+        '/repos/owner/demo-repo/git/ref/heads/feature/x': { object: { sha: full } },
+        [`/repos/owner/demo-repo/commits/${full}/check-runs?filter=latest`]: page([run('gate', 'success')]),
+      }).fetch,
+      { repo: 'demo', branch: 'feature/x' },
+    );
+    expect(result).toMatchObject({ branch: 'feature/x', commit: full, state: 'passed' });
+    expect(formatCommitStatus(result)).toBe(
+      `owner/demo-repo (demo) branch feature/x at commit ${full}: passed; read at ${result.read_at}`,
+    );
+  });
+
+  it('refuses anything but a commit id or a plain branch name before any gateway call', async () => {
+    const gh = fakeGithub({});
+    for (const bad of [{ commit: 'xyz1234' }, { branch: 'a/../../../user' }, { commit: SHA, branch: 'main' }]) {
+      await expect(commitStatus(config, gh.fetch, { repo: 'demo', ...bad })).rejects.toThrow(/--commit|--branch/);
+    }
+    expect(gh.asked).toEqual([]);
+  });
+
+  it('prints a failed name on one line, cut at 100', () => {
+    const [name] = commitVerdict([run(`a\tb\nc${'x'.repeat(300)}`, 'failure')], ['gate']).failed_names;
+    expect(name.length).toBeLessThanOrEqual(100);
+    expect(name).toMatch(/^a b cx+ \[cut at 100 characters\]$/);
+  });
+
+  it('puts filter=latest on its own check-runs request only, never on the pull-request verb’s two', async () => {
+    const gh = fakeGithub({
+      '/repos/owner/demo-repo/pulls?': [pull(1, 'owner')],
+      '/repos/owner/demo-repo/pulls/1': pull(1, 'owner'),
+      [`${CHECKS}&page=1`]: page([run('gate', 'success')]),
+    });
+    await pullStatus(config, gh.fetch, { repo: 'demo' });
+    await pullStatus(config, gh.fetch, { repo: 'demo', number: 1 });
+    await commitStatus(config, gh.fetch, { repo: 'demo', commit: SHA });
+    const checkRuns = gh.asked.filter((p) => p.includes('/check-runs'));
+    expect(checkRuns).toHaveLength(3);
+    expect(checkRuns.slice(0, 2).every((p) => !p.includes('filter='))).toBe(true);
+    expect(checkRuns[2]).toContain('filter=latest');
   });
 });
 

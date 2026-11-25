@@ -42,6 +42,8 @@ export type GithubStatusConfig = {
   gatewayAgent: string;
   /** Agent groups allowed to call the tool. */
   agentGroups: Set<string>;
+  /** Per repository name, the checks that must have succeeded before a commit shows "passed". */
+  requiredChecks: Map<string, string[]>;
   onecliBin: string;
 };
 
@@ -67,6 +69,26 @@ export function parseRepos(value: string | undefined): Map<string, RepoRef> {
   return repos;
 }
 
+/**
+ * `{"name":["check", ...], ...}`, one line of JSON (check names may hold commas) → lists by repo name.
+ * Empty → no lists, so no commit ever shows passed. Throws on any other shape.
+ */
+export function parseRequiredChecks(value: string | undefined): Map<string, string[]> {
+  if (!value?.trim()) return new Map();
+  const message = 'GITHUB_STATUS_REQUIRED_CHECKS is not one line of JSON: repository name to a list of check names';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch (err) {
+    throw new Error(message, { cause: err });
+  }
+  const entries = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? Object.entries(parsed) : null;
+  if (!entries?.every(([, names]) => Array.isArray(names) && names.every((n) => typeof n === 'string'))) {
+    throw new Error(message);
+  }
+  return new Map(entries as [string, string[]][]);
+}
+
 /** Read the tool's settings; null when it is not configured (the command then explains how). */
 export function readGithubStatusConfig(env: Record<string, string | undefined>): GithubStatusConfig | null {
   const ownerLogin = env.GITHUB_STATUS_OWNER_LOGIN?.trim();
@@ -82,6 +104,7 @@ export function readGithubStatusConfig(env: Record<string, string | undefined>):
     repos,
     gatewayAgent,
     agentGroups: new Set(groups),
+    requiredChecks: parseRequiredChecks(env.GITHUB_STATUS_REQUIRED_CHECKS),
     onecliBin: env.ONECLI_BIN?.trim() || path.join(os.homedir(), '.local', 'bin', 'onecli'),
   };
 }
@@ -91,6 +114,7 @@ export const ENV_KEYS = [
   'GITHUB_STATUS_REPOS',
   'GITHUB_STATUS_GATEWAY_AGENT',
   'GITHUB_STATUS_AGENT_GROUPS',
+  'GITHUB_STATUS_REQUIRED_CHECKS',
   'ONECLI_BIN',
 ];
 
@@ -525,6 +549,110 @@ export async function issueStatus(
 }
 
 // ---------------------------------------------------------------------------
+// Did the checks pass on one commit. Strict on purpose: only "passed" passes.
+// ---------------------------------------------------------------------------
+
+export type CommitArgs = { repo: string; commit?: string; branch?: string };
+
+export type CommitVerdict = {
+  state: 'passed' | 'failed' | 'running' | 'not run';
+  /** Why "not run", when it is more than "no check runs". */
+  reason?: string;
+  failed_names: string[];
+};
+
+export type CommitStatusResult = CommitVerdict & {
+  repo: string;
+  repository: string;
+  branch?: string;
+  commit: string;
+  /** When the host finished reading GitHub. */
+  read_at: string;
+};
+
+const COMMIT_RE = /^[0-9a-f]{7,40}$/i;
+// Names of letters, digits, '.', '_' and '-' joined by single slashes. No name starts with '.', so no
+// segment is '.' or '..', which curl would resolve.
+const BRANCH_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/;
+const SUCCEEDED = new Set(['success', 'skipped']);
+
+/** A check name as it is printed: bounded plain text on one line. */
+const checkName = (name: unknown): string => plainText(name ?? 'unnamed check', 100).replace(/[\n\t]/g, ' ');
+
+/** The verdict for every check run on one commit, against the repository's required names. */
+export function commitVerdict(runs: GhCheckRun[], required: string[]): CommitVerdict {
+  if (runs.length === 0) return { state: 'not run', failed_names: [] };
+  const failed = runs.filter((r) =>
+    r.status === 'completed' ? !SUCCEEDED.has(r.conclusion ?? '') : !PENDING_STATUS.has(r.status ?? ''),
+  );
+  if (failed.length) return { state: 'failed', failed_names: [...new Set(failed.map((r) => checkName(r.name)))] };
+  if (runs.some((r) => r.status !== 'completed')) return { state: 'running', failed_names: [] };
+  if (required.length === 0) return { state: 'not run', reason: 'no required checks configured', failed_names: [] };
+  for (const name of required) {
+    const named = runs.filter((r) => r.name === name);
+    if (named.length === 0) return { state: 'not run', reason: `required check ${name} not found`, failed_names: [] };
+    if (named.some((r) => r.conclusion !== 'success')) {
+      return { state: 'not run', reason: `required check ${name} skipped`, failed_names: [] };
+    }
+  }
+  return { state: 'passed', failed_names: [] };
+}
+
+/** Every page of a commit's check runs; anything short of that is an error, never an empty list. */
+async function allCheckRuns(fetch: Fetcher, apiPath: string): Promise<GhCheckRun[]> {
+  const runs: GhCheckRun[] = [];
+  for (let page = 1; ; page++) {
+    const body = (await fetch(`${apiPath}&page=${page}`)) as { total_count?: unknown; check_runs?: unknown } | null;
+    if (typeof body?.total_count !== 'number' || !Array.isArray(body.check_runs)) {
+      throw new Error(`page ${page} of the check runs was not a list of check runs`);
+    }
+    runs.push(...(body.check_runs as GhCheckRun[]));
+    if (runs.length >= body.total_count) return runs;
+    if (body.check_runs.length === 0) throw new Error(`page ${page} ended the check runs before all were read`);
+  }
+}
+
+export async function commitStatus(
+  config: GithubStatusConfig,
+  fetch: Fetcher,
+  args: CommitArgs,
+): Promise<CommitStatusResult> {
+  const ref = resolveRepo(config, args.repo);
+  const { commit, branch } = args;
+  if ((commit === undefined) === (branch === undefined))
+    throw new Error('give one of --commit <id> or --branch <name>');
+  if (commit !== undefined && !COMMIT_RE.test(commit)) throw new Error('--commit must be 7 to 40 hex characters');
+  if (branch !== undefined && !BRANCH_RE.test(branch)) {
+    throw new Error('--branch must be names of letters, digits, ".", "_" and "-" joined by "/"');
+  }
+  const base = `/repos/${ref.owner}/${ref.repo}`;
+  let id: string;
+  let runs: GhCheckRun[];
+  try {
+    if (branch !== undefined) {
+      const found = (await fetch(`${base}/git/ref/heads/${branch.split('/').map(encodeURIComponent).join('/')}`)) as {
+        object?: { sha?: unknown };
+      } | null;
+      if (typeof found?.object?.sha !== 'string') throw new Error('the branch answer held no commit id');
+      id = found.object.sha;
+    } else {
+      id = commit!;
+    }
+    runs = await allCheckRuns(fetch, `${base}/commits/${id}/check-runs?filter=latest&per_page=100`);
+  } catch (err) {
+    throw new Error(`could not read: ${err instanceof Error ? err.message : String(err)}`, { cause: err });
+  }
+  return {
+    repo: ref.name,
+    repository: `${ref.owner}/${ref.repo}`,
+    ...(branch !== undefined && { branch }),
+    commit: id,
+    ...commitVerdict(runs, config.requiredChecks.get(ref.name) ?? []),
+    read_at: new Date().toISOString(),
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Human rendering.
 // ---------------------------------------------------------------------------
 
@@ -576,4 +704,11 @@ export function formatIssueStatus(r: IssueStatusResult): string {
   ];
   if (r.scope === 'one') lines.push(...yourText(r.issues[0].your_text));
   return lines.join('\n');
+}
+
+export function formatCommitStatus(r: CommitStatusResult): string {
+  const at = r.branch ? `branch ${r.branch} at commit ${r.commit}` : `commit ${r.commit}`;
+  const state = r.reason ? `${r.state} (${r.reason})` : r.state;
+  const failed = r.failed_names.length ? `; failed: ${r.failed_names.join(', ')}` : '';
+  return `${r.repository} (${r.repo}) ${at}: ${state}${failed}; read at ${r.read_at}`;
 }

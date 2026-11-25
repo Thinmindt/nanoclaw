@@ -1,10 +1,13 @@
 import {
+  commitStatus,
+  formatCommitStatus,
   formatIssueStatus,
   formatPullStatus,
   gatewayFetcher,
   issueStatus,
   loadGithubStatusConfig,
   pullStatus,
+  type CommitArgs,
   type GithubStatusConfig,
   type StatusArgs,
 } from '../../github-status.js';
@@ -31,15 +34,20 @@ function configured(ctx: CallerContext): GithubStatusConfig {
   return config;
 }
 
-/** `--repo <name> [--pr|--issue N] [--all]`, with unknown flags refused. */
-function statusArgs(raw: Record<string, unknown>, numberKey: 'pr' | 'issue'): StatusArgs {
-  const allowed = new Set(['repo', numberKey, 'all']);
+/** The flags as given, with dashes as underscores; any flag outside `allowed` is refused. */
+function knownFields(raw: Record<string, unknown>, allowed: Set<string>): Record<string, unknown> {
   const input: Record<string, unknown> = Object.create(null);
   for (const [key, value] of Object.entries(raw)) input[key.replace(/-/g, '_')] = value;
   for (const key of Object.keys(input)) {
     if (IGNORED_FIELDS.has(key) || allowed.has(key)) continue;
     throw new Error(`unknown field --${key}; allowed: ${[...allowed].map((k) => `--${k}`).join(', ')}`);
   }
+  return input;
+}
+
+/** `--repo <name> [--pr|--issue N] [--all]`, with unknown flags refused. */
+function statusArgs(raw: Record<string, unknown>, numberKey: 'pr' | 'issue'): StatusArgs {
+  const input = knownFields(raw, new Set(['repo', numberKey, 'all']));
   const args: StatusArgs = { repo: typeof input.repo === 'string' ? input.repo : '' };
   if (input[numberKey] !== undefined && input[numberKey] !== null && input[numberKey] !== '') {
     const n = Number(input[numberKey]);
@@ -76,7 +84,7 @@ register({
     'Pull request status for one repository: number, state, draft, merged, checks, reviews, dates. ' +
     '--repo <name> (see github repos); --pr <number> for one pull request with your own description ' +
     'and comments; --all to include closed and merged ones. Text written by anyone but the owner is ' +
-    'never shown.',
+    'never shown. Its count includes skipped and neutral and does not ask whether a required check ran.',
   parseArgs: (raw) => statusArgs(raw as Record<string, unknown>, 'pr'),
   handler: async (args, ctx) => {
     const config = configured(ctx);
@@ -99,4 +107,25 @@ register({
     return issueStatus(config, gatewayFetcher(config), args);
   },
   formatHuman: (result) => formatIssueStatus(result),
+});
+
+register({
+  name: 'github-commit-status',
+  action: 'github.commit-status',
+  access: 'open',
+  description:
+    'Did the checks pass on one commit: --repo <name> and --commit <id> (7 to 40 hex) or --branch <name>. ' +
+    'Answers the commit id, one state (passed, failed, running or not run), the names of failed checks ' +
+    'as GitHub gives them, and the time it read GitHub. Passed means every check run succeeded or was ' +
+    'skipped and every required check for the repository ran and succeeded.',
+  parseArgs: (raw) => {
+    const input = knownFields(raw as Record<string, unknown>, new Set(['repo', 'commit', 'branch']));
+    const text = (v: unknown) => (v === undefined ? undefined : String(v));
+    return { repo: text(input.repo) ?? '', commit: text(input.commit), branch: text(input.branch) } as CommitArgs;
+  },
+  handler: async (args, ctx) => {
+    const config = configured(ctx);
+    return commitStatus(config, gatewayFetcher(config), args);
+  },
+  formatHuman: (result) => formatCommitStatus(result),
 });
