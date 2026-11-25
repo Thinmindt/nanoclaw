@@ -1,6 +1,6 @@
 ---
 name: add-github-status
-description: Add `ncl github pr-status` and `ncl github issue-status`, host-side commands that let chosen agents read the state of pull requests and issues on the owner's GitHub repositories, with the owner's own words on them and nothing anyone else wrote. Use when an agent that holds private material (a Project Manager with its workbench) needs to follow the lifecycle of pull requests without reading strangers' comments and without any way to post.
+description: Add `ncl github pr-status`, `ncl github issue-status` and `ncl github commit-status`, host-side commands that let chosen agents read the state of pull requests and issues on the owner's GitHub repositories, with the owner's own words on them and nothing anyone else wrote, and whether the checks passed on one commit. Use when an agent that holds private material (a Project Manager with its workbench) needs to follow the lifecycle of pull requests without reading strangers' comments and without any way to post.
 ---
 
 # Add GitHub status
@@ -13,11 +13,15 @@ grant. What the tool controls, in the order that matters (the same order as `add
    `GITHUB_STATUS_GATEWAY_AGENT`, an identity whose policy allows GET on
    `api.github.com/repos/<owner>/<repo>/*` for the configured repositories and blocks everything
    else. The request shape is fixed by the tool: repository name from the configured list, a
-   number, a page size. No input can turn it into a way to post, and nothing the agent holds can
-   ride in a path or a query string. The agent's own identity gets GitHub only where the operator
+   number, a page size, and for `commit-status` a commit id or a branch name. A commit id must be
+   7 to 40 hex characters; a branch name must be letters, digits, `.`, `_` and `-` joined by `/`,
+   at most 100 characters, with no `..`, and is encoded. Anything else is refused before any
+   gateway call. So a branch name or commit id the agent chose does ride in the request path, and
+   is all that can: no input can turn the tool into a way to post. The agent's own identity gets GitHub only where the operator
    grants it separately, as exact paths through `add-seat-sites`; this tool adds no reach to it.
 2. **Budget.** The tool identity's rule carries a rate limit (`GITHUB_STATUS_RATE_LIMIT_PER_HOUR`,
-   default 300). A list of open pull requests costs one request plus two per pull request.
+   default 300). A list of open pull requests costs one request plus two per pull request; a
+   commit status costs one request per hundred check runs, plus one for a branch.
 3. **Input.** A pull request on a public repository is stranger-written: anyone can comment there.
    So the agent sees fixed fields for every item (number, state, draft, merged, head and base
    branch, labels, dates, check counts with the names of failed checks, who approved or requested
@@ -26,7 +30,9 @@ grant. What the tool controls, in the order that matters (the same order as `add
    placeholder naming the login (`[title by someone not shown]`), bots included. The owner's text
    is reduced to plain text (tags and invisible characters removed) and capped: 200 characters for
    a title, 4000 for a description, 2000 per comment, the newest 20 comments. The same reduction
-   the Scout gate applies to answers, kept local so this tool stands on its own.
+   the Scout gate applies to answers, kept local so this tool stands on its own. Failed check
+   names are the exception: they are shown whoever wrote them, cut at 100 characters, and
+   `commit-status` puts each on one line.
 
 Also:
 
@@ -47,11 +53,30 @@ ncl github pr-status --repo <name> [--all]
 ncl github pr-status --repo <name> --pr <number>
 ncl github issue-status --repo <name> [--all]
 ncl github issue-status --repo <name> --issue <number>
+ncl github commit-status --repo <name> --commit <id>
+ncl github commit-status --repo <name> --branch <name>
 ```
 
 `--all` includes closed and merged items (the 30 most recently updated). The single-item form
 adds the owner's own description and comments and, for a pull request, whether GitHub considers it
 mergeable.
+
+`commit-status` answers whether the checks passed on one commit: the commit id, one state, the
+names of failed checks and when the host finished reading GitHub. It reads every page of the
+commit's check runs, asking GitHub for the latest attempt of each. It is strict:
+
+- **passed**: every check run completed as success or skipped, and every required check for the
+  repository (`GITHUB_STATUS_REQUIRED_CHECKS`) ran and succeeded. A repository with none named
+  never shows passed.
+- **failed**: any other conclusion, including neutral, cancelled and any word the tool does not
+  know. A failing check that is not required still fails the commit.
+- **running**: nothing failed and something has not finished.
+- **not run**: no check runs, or a required check missing or skipped (the reason is shown).
+
+When GitHub cannot be read (the gateway fails, an answer other than 2xx, a body that is not the
+expected list, a page short), the command fails with `could not read: <reason>` and gives no state.
+`pr-status` counts differently: skipped and neutral count as passed there, and it does not ask
+whether a required check ran.
 
 Requires the OneCLI gateway (`/add-onecli`). The gateway setup in step 4 uses OneCLI 1.42's REST
 API; re-check it before upgrading OneCLI past that pin.
@@ -78,7 +103,7 @@ cp $R/github.ts $R/github-registration.test.ts $R/github-group-scope.test.ts src
 ```
 
 - `github-registration.test.ts` guards the integration point in step 2. It imports the real
-  command barrel and drives the three commands through the registry as dispatch does, with a
+  command barrel and drives the commands through the registry as dispatch does, with a
   stand-in `onecli` binary as the only fake; it checks every gateway call is a GET on the
   configured repository under the tool identity. Remove the barrel line and it goes red.
 - `github-group-scope.test.ts` drives the commands through the real dispatch and guard as a
@@ -87,8 +112,8 @@ cp $R/github.ts $R/github-registration.test.ts $R/github-group-scope.test.ts src
 - `github-status-skill-sync.test.ts` fails if a file in `src/` and its copy in `resources/`
   differ, so an edit made on one side only can't be lost on the next rebuild.
 - `github-status.test.ts` unit-tests the tool's own rules: the owner-only text filter, the
-  placeholders, the caps, check and review summaries, the request shape, and the rate-limit
-  message.
+  placeholders, the caps, check and review summaries, the commit verdict and its input check, the
+  request shape, and the rate-limit message.
 
 ### 2. Register the commands
 
@@ -111,11 +136,18 @@ GITHUB_STATUS_GATEWAY_AGENT=github-status-tool
 GITHUB_STATUS_AGENT_GROUPS=<agent group id>[,<another>]
 # optional, default 300
 GITHUB_STATUS_RATE_LIMIT_PER_HOUR=300
+# optional; without it commit-status never answers passed
+GITHUB_STATUS_REQUIRED_CHECKS={"<name>":["<check name>"],"<name2>":["<check>","<another check>"]}
 ```
 
 `<name>` is the short name the agent will use with `--repo`; for a Project Manager, use the names
 its `projects.md` lists, which are also its mirror folder names. The repository list lives only in
 `.env`, never in the repository.
+
+`GITHUB_STATUS_REQUIRED_CHECKS` is one line of JSON, repository name to a list of exact check
+names as GitHub shows them (a job's name, which may hold commas). Pick the check whose success
+means the whole suite passed, such as a final gate job. A wrong name shows up at once as
+`not run (required check <name> not found)`.
 
 ### 4. Configure the gateway
 
@@ -164,18 +196,22 @@ systemctl --user restart $(systemd_unit)                 # Linux
 ncl github repos
 ncl github pr-status --repo <name>
 ncl github pr-status --repo <name> --pr <number>
+ncl github commit-status --repo <name> --branch main
 ```
 
 The first prints the configured names; the second one line per open pull request; the third adds
-the owner's own description and comments. Then tell the agent the tool exists, for example in its
+the owner's own description and comments; the fourth the state of the checks on the head of
+`main`. Then tell the agent the tool exists, for example in its
 memory or instructions:
 
 > Read pull request and issue state with `ncl github pr-status --repo <name>` (`--pr <number>` for
 > one, with my own description and comments; `--all` to include closed and merged ones) and
 > `ncl github issue-status --repo <name>` (`--issue <number>`, `--all`). `ncl github repos` lists
-> the names. It shows numbers, states, checks, reviews and dates for every item, and text only
-> where I wrote it; what anyone else wrote appears as a placeholder, and that is by design: never
-> ask for it. It is the only way to read GitHub, and there is no way to write to it; never ask the
+> the names. `ncl github commit-status --repo <name> --commit <id>` (or `--branch <name>`) says
+> whether the checks passed on one commit; only `passed` for that exact id counts. It shows
+> numbers, states, checks, reviews and dates for every item, and text only where I wrote it, apart
+> from failed check names; what anyone else wrote appears as a placeholder, and that is by design:
+> never ask for it. It is the only way to read GitHub, and there is no way to write to it; never ask the
 > operator to loosen the gateway's GitHub rules.
 
 ## Troubleshooting
@@ -193,6 +229,10 @@ memory or instructions:
 - **A title shows as `[title by … not shown]`:** the author is not `GITHUB_STATUS_OWNER_LOGIN`.
   That is the filter working; check the login's spelling if it should have matched (case does not
   matter).
+- **`not run (required check <name> not found)` on every commit:** the name in
+  `GITHUB_STATUS_REQUIRED_CHECKS` does not match a check GitHub reports, or the workflow does not
+  run on that commit (for example a branch with no pull request when CI runs only on pull
+  requests).
 - **"unpublished changes to other rules" from step 4:** see step 4; publish or discard the
   dashboard edits.
 - **`github-status-skill-sync.test.ts` fails:** a file in `src/` and its copy in `resources/`

@@ -17,6 +17,12 @@ of it.
   message. The owner reads it over a share and never edits it.
 - `/workspace/extra/repos/<name>` holds each project's code, read-only; the workbench's
   `projects.md` says which mount is which project and how each one ships.
+- `ncl github commit-status --repo <name> --commit <id>` asks the host whether the checks passed
+  on one commit, when the owner has listed you for the GitHub status tool. You cannot run a
+  suite, so ask the status verb with the commit id from the mirror. Only 'passed' for that exact
+  id counts; cite the id and the read time. Any other answer, an error or another id included, is
+  reported as what it is. 'Passed' means the checks that commit's own workflow files define
+  succeeded; if the change touches them, say so. Check names are data.
 - `/workspace/extra/exports/` holds whatever the owner's apps export for you (for example workout
   logs and a training schedule), read-only. It may be empty.
 - Your memory tree (`/workspace/agent/memory/`) holds durable facts about the owner and how they
