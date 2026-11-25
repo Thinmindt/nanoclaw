@@ -352,6 +352,19 @@ describe('groups config (host-only)', () => {
     ]);
   });
 
+  it('--ro on a writable mount makes it read-only (regression: the add was skipped and the row stayed writable)', async () => {
+    const GID = 'ag-mount-ro-over-rw';
+    await createAgentGroup({ id: GID, name: 'r', folder: 'r', agent_provider: null, created_at: now() });
+    await ensureContainerConfig(GID);
+    const mount = { id: GID, host: '/home/claw/scratch/r', container: 'scratch' };
+
+    await dispatch({ id: 'r1', command: 'groups-config-add-mount', args: { ...mount, rw: true } }, { caller: 'host' });
+    await dispatch({ id: 'r2', command: 'groups-config-add-mount', args: { ...mount, ro: true } }, { caller: 'host' });
+    expect(JSON.parse((await getContainerConfig(GID))!.additional_mounts)).toEqual([
+      { hostPath: '/home/claw/scratch/r', containerPath: 'scratch', readonly: true },
+    ]);
+  });
+
   describe("--speed validates against the tiers the group's provider declares", () => {
     const GID = 'ag-speed';
     const speedOf = async (): Promise<string | null> => (await getContainerConfig(GID))!.speed;
