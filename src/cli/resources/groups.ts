@@ -601,7 +601,7 @@ registerResource({
         'inside a container (mounting host paths is a filesystem-access boundary). Requires ' +
         '`ncl groups restart` to take effect. Use --id <group-id> --host <host-path> --container <container-path> ' +
         '[--ro | --rw]. With neither flag the mount is read-only; --rw is writable only under an allowlist root ' +
-        'with allowReadWrite.',
+        'with allowReadWrite. Adding a mount that is already there replaces its row, so the flags given last hold.',
       handler: async (args) => {
         const id = args.id as string;
         if (!id) throw new Error('--id is required');
@@ -618,11 +618,15 @@ registerResource({
           ...(args.ro || args.readonly ? { readonly: true } : args.rw ? { readonly: false } : {}),
         };
         const existing = JSON.parse(row.additional_mounts) as AdditionalMountConfig[];
-        if (!existing.some((m) => m.hostPath === hostPath && m.containerPath === containerPath)) {
-          existing.push(mount);
-          await updateContainerConfigJson(id, 'additional_mounts', existing);
-        }
-        return { added: mount, note: `Run \`ncl groups restart --id ${id}\` for the mount to take effect.` };
+        const at = existing.findIndex((m) => m.hostPath === hostPath && m.containerPath === containerPath);
+        if (at === -1) existing.push(mount);
+        else existing[at] = mount;
+        await updateContainerConfigJson(id, 'additional_mounts', existing);
+        return {
+          added: mount,
+          replaced: at !== -1,
+          note: `Run \`ncl groups restart --id ${id}\` for the mount to take effect.`,
+        };
       },
     },
     'config remove-mount': {
