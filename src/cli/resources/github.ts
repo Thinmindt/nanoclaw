@@ -31,15 +31,20 @@ function configured(ctx: CallerContext): GithubStatusConfig {
   return config;
 }
 
-/** `--repo <name> [--pr|--issue N] [--all]`, with unknown flags refused. */
-function statusArgs(raw: Record<string, unknown>, numberKey: 'pr' | 'issue'): StatusArgs {
-  const allowed = new Set(['repo', numberKey, 'all']);
+/** The flags as given, with dashes as underscores; any flag outside `allowed` is refused. */
+function knownFields(raw: Record<string, unknown>, allowed: Set<string>): Record<string, unknown> {
   const input: Record<string, unknown> = Object.create(null);
   for (const [key, value] of Object.entries(raw)) input[key.replace(/-/g, '_')] = value;
   for (const key of Object.keys(input)) {
     if (IGNORED_FIELDS.has(key) || allowed.has(key)) continue;
     throw new Error(`unknown field --${key}; allowed: ${[...allowed].map((k) => `--${k}`).join(', ')}`);
   }
+  return input;
+}
+
+/** `--repo <name> [--pr|--issue N] [--all]`, with unknown flags refused. */
+function statusArgs(raw: Record<string, unknown>, numberKey: 'pr' | 'issue'): StatusArgs {
+  const input = knownFields(raw, new Set(['repo', numberKey, 'all']));
   const args: StatusArgs = { repo: typeof input.repo === 'string' ? input.repo : '' };
   if (input[numberKey] !== undefined && input[numberKey] !== null && input[numberKey] !== '') {
     const n = Number(input[numberKey]);
