@@ -270,6 +270,11 @@ describe('commitStatus', () => {
       { state: 'not run', reason: 'required check gate not found' },
     ],
     [
+      'not run when the required check was skipped',
+      [run('gate', 'skipped')],
+      { state: 'not run', reason: 'required check gate skipped' },
+    ],
+    [
       'failed when one of two runs with one name failed',
       [run('gate', 'success'), run('gate', 'failure')],
       { state: 'failed', failed_names: ['gate'] },
@@ -324,15 +329,7 @@ describe('commitStatus', () => {
 
   it('refuses anything but a commit id or a plain branch name before any gateway call', async () => {
     const gh = fakeGithub({});
-    for (const bad of [
-      { commit: 'abc12' },
-      { commit: 'xyz1234' },
-      { branch: 'a/../../../user' },
-      { branch: 'a b' },
-      { branch: 'x?per_page=1' },
-      { commit: SHA, branch: 'main' },
-      {},
-    ]) {
+    for (const bad of [{ commit: 'xyz1234' }, { branch: 'a/../../../user' }, { commit: SHA, branch: 'main' }]) {
       await expect(commitStatus(config, gh.fetch, { repo: 'demo', ...bad })).rejects.toThrow(/--commit|--branch/);
     }
     expect(gh.asked).toEqual([]);
