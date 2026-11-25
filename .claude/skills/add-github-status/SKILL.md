@@ -141,8 +141,9 @@ GITHUB_STATUS_REQUIRED_CHECKS={"<name>":["<check name>"],"<name2>":["<check>","<
 ```
 
 `<name>` is the short name the agent will use with `--repo`; for a Project Manager, use the names
-its `projects.md` lists, which are also its mirror folder names. The repository list lives only in
-`.env`, never in the repository.
+its `projects.md` lists, which are also its mirror folder names. List only projects whose repository
+is on GitHub: a project kept elsewhere has a mirror folder too, but every read of it answers 404. The
+repository list lives only in `.env`, never in the repository.
 
 `GITHUB_STATUS_REQUIRED_CHECKS` is one line of JSON, repository name to a list of exact check
 names as GitHub shows them (a job's name, which may hold commas). Pick the check whose success
