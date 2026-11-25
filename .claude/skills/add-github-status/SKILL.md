@@ -14,8 +14,8 @@ grant. What the tool controls, in the order that matters (the same order as `add
    `api.github.com/repos/<owner>/<repo>/*` for the configured repositories and blocks everything
    else. The request shape is fixed by the tool: repository name from the configured list, a
    number, a page size, and for `commit-status` a commit id or a branch name. A commit id must be
-   7 to 40 hex characters; a branch name must be letters, digits, `.`, `_` and `-` joined by `/`,
-   at most 100 characters, with no `..`, and is encoded. Anything else is refused before any
+   7 to 40 hex characters; a branch name must be names of letters, digits, `.`, `_` and `-`
+   joined by `/`, none starting with `.`, and is encoded. Anything else is refused before any
    gateway call. So a branch name or commit id the agent chose does ride in the request path, and
    is all that can: no input can turn the tool into a way to post. The agent's own identity gets GitHub only where the operator
    grants it separately, as exact paths through `add-seat-sites`; this tool adds no reach to it.

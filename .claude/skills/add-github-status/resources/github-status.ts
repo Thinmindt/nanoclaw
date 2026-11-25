@@ -571,8 +571,9 @@ export type CommitStatusResult = CommitVerdict & {
 };
 
 const COMMIT_RE = /^[0-9a-f]{7,40}$/i;
-// Names of letters, digits, '.', '_' and '-' joined by single slashes; no '..', which curl would resolve.
-const BRANCH_RE = /^(?!.*\.\.)[A-Za-z0-9_][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/;
+// Names of letters, digits, '.', '_' and '-' joined by single slashes. No name starts with '.', so no
+// segment is '.' or '..', which curl would resolve.
+const BRANCH_RE = /^[A-Za-z0-9_][A-Za-z0-9._-]*(?:\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/;
 const SUCCEEDED = new Set(['success', 'skipped']);
 
 /** A check name as it is printed: bounded plain text on one line. */
@@ -621,10 +622,8 @@ export async function commitStatus(
   if ((commit === undefined) === (branch === undefined))
     throw new Error('give one of --commit <id> or --branch <name>');
   if (commit !== undefined && !COMMIT_RE.test(commit)) throw new Error('--commit must be 7 to 40 hex characters');
-  if (branch !== undefined && !(branch.length <= 100 && BRANCH_RE.test(branch))) {
-    throw new Error(
-      '--branch must be names of letters, digits, ".", "_" and "-" joined by "/", at most 100 characters',
-    );
+  if (branch !== undefined && !BRANCH_RE.test(branch)) {
+    throw new Error('--branch must be names of letters, digits, ".", "_" and "-" joined by "/"');
   }
   const base = `/repos/${ref.owner}/${ref.repo}`;
   let id: string;
@@ -634,9 +633,8 @@ export async function commitStatus(
       const found = (await fetch(`${base}/git/ref/heads/${branch.split('/').map(encodeURIComponent).join('/')}`)) as {
         object?: { sha?: unknown };
       } | null;
-      const sha = found?.object?.sha;
-      if (typeof sha !== 'string' || !COMMIT_RE.test(sha)) throw new Error('the branch answer held no commit id');
-      id = sha;
+      if (typeof found?.object?.sha !== 'string') throw new Error('the branch answer held no commit id');
+      id = found.object.sha;
     } else {
       id = commit!;
     }
