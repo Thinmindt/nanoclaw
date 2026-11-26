@@ -21,13 +21,15 @@ before(() => {
   root = mkdtempSync(join(tmpdir(), 'clidash-act-'));
   // session 1 (group ag-1): 3 inbound across 2 days, 2 outbound today
   mkdirSync(join(root, 'ag-1', 'sess-1'), { recursive: true });
-  makeDb(join(root, 'ag-1', 'sess-1', 'inbound.db'), 'messages_in',
+  mkdirSync(join(root, 'ag-1', '.inbound', 'sess-1'), { recursive: true });
+  makeDb(join(root, 'ag-1', '.inbound', 'sess-1', 'inbound.db'), 'messages_in',
     ['2026-06-14 09:01:23', '2026-06-14 10:00:00', '2026-06-13 08:00:00']);
   makeDb(join(root, 'ag-1', 'sess-1', 'outbound.db'), 'messages_out',
     ['2026-06-14 09:05:00', '2026-06-14 10:05:00']);
   // session 2 (group ag-2): 1 inbound 20 days ago (outside 14d window), 0 outbound
   mkdirSync(join(root, 'ag-2', 'sess-2'), { recursive: true });
-  makeDb(join(root, 'ag-2', 'sess-2', 'inbound.db'), 'messages_in', ['2026-05-25 08:00:00']);
+  mkdirSync(join(root, 'ag-2', '.inbound', 'sess-2'), { recursive: true });
+  makeDb(join(root, 'ag-2', '.inbound', 'sess-2', 'inbound.db'), 'messages_in', ['2026-05-25 08:00:00']);
   makeDb(join(root, 'ag-2', 'sess-2', 'outbound.db'), 'messages_out', []);
 });
 

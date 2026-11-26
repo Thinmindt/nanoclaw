@@ -15,6 +15,7 @@ vi.mock('./upgrade-state.js', () => ({ enforceUpgradeTripwire: vi.fn() }));
 vi.mock('./db/connection.js', () => ({ initDb: async () => ({ dialect: 'sqlite' }), closeDb: vi.fn() }));
 vi.mock('./db/migrations/index.js', () => ({ runMigrations: vi.fn() }));
 vi.mock('./drivers/index.js', () => ({ getSessionDriver: () => ({ ensureReady: vi.fn() }) }));
+vi.mock('./mailbox/sqlite/move-inbound.js', () => ({ moveInboundMailboxes: vi.fn() }));
 vi.mock('./container-runner.js', () => ({
   adoptRunningSessions: async () => {
     expect(state.approvalReady).toBe(true);

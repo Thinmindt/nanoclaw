@@ -2,7 +2,7 @@ import fs from 'fs';
 import type Database from 'better-sqlite3';
 
 import { log } from '../../log.js';
-import { sessionMailboxDir, sessionMailboxPath } from './paths.js';
+import { inboundMailboxDir, sessionMailboxDir, sessionMailboxPath } from './paths.js';
 export { inboundDbPath, outboundDbPath, sessionMailboxDir, sessionMailboxPath } from './paths.js';
 import {
   countDueMessages,
@@ -429,6 +429,7 @@ export class SqliteAgentMailbox implements AgentMailbox {
 
   prepare(key: MailboxSessionKey): void {
     fs.mkdirSync(sessionMailboxDir(key), { recursive: true });
+    fs.mkdirSync(inboundMailboxDir(key), { recursive: true });
     const inbound = sessionMailboxPath(key, 'inbound');
     const outbound = sessionMailboxPath(key, 'outbound');
     if (!fs.existsSync(inbound)) ensureSchema(inbound, 'inbound');
@@ -438,10 +439,9 @@ export class SqliteAgentMailbox implements AgentMailbox {
   async destroy(key: MailboxSessionKey): Promise<void> {
     const inbound = sessionMailboxPath(key, 'inbound');
     this.migrated.delete(inbound);
-    for (const side of ['inbound', 'outbound'] as const) {
-      const db = sessionMailboxPath(key, side);
-      for (const suffix of ['', '-journal', '-shm', '-wal']) fs.rmSync(`${db}${suffix}`, { force: true });
-    }
+    fs.rmSync(inboundMailboxDir(key), { recursive: true, force: true });
+    const outbound = sessionMailboxPath(key, 'outbound');
+    for (const suffix of ['', '-journal', '-shm', '-wal']) fs.rmSync(`${outbound}${suffix}`, { force: true });
   }
 
   async runnerContext(_key: MailboxSessionKey): Promise<null> {

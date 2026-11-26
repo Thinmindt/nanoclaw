@@ -19,7 +19,8 @@
  */
 import { Database } from 'bun:sqlite';
 
-const DEFAULT_INBOUND_PATH = '/workspace/inbound.db';
+// The host mounts this folder read-only; the seat cannot write what it receives.
+const DEFAULT_INBOUND_PATH = '/mailbox/inbound.db';
 const DEFAULT_OUTBOUND_PATH = '/workspace/outbound.db';
 
 let _inbound: Database | null = null;

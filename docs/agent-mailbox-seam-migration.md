@@ -2,7 +2,8 @@
 
 NanoClaw now routes per-session mailbox access through matching semantic
 registries in the Node host and Bun runner. The open-source composition still
-selects SQLite, and existing `inbound.db` and `outbound.db` files remain valid.
+selects SQLite, and existing `inbound.db` and `outbound.db` files remain valid
+(`inbound.db` has since moved to a host-only folder; see Roll back).
 
 ## Detect affected customizations
 
@@ -151,6 +152,30 @@ awaited or deliberately SQLite-only.
 
 ## Roll back
 
-No stored-data migration occurs. Return NanoClaw and custom modules to the
-previous revision, rebuild the host and agent image, and restart the service.
-The same SQLite session files remain usable after rollback.
+The seam itself migrates no stored data. Return NanoClaw and custom modules to
+the previous revision, rebuild the host and agent image, and restart the service.
+
+One later change does move data: each session's `inbound.db` moved from
+`data/v2-sessions/<group>/<session>/` to the host-only
+`data/v2-sessions/<group>/.inbound/<session>/` (see [db-session.md](db-session.md)).
+To roll back past it, copy each file back before the older code starts. Older
+code started without the copy finds no file at the old path, creates an empty
+one and reports nothing.
+
+```bash
+# 1. Stop the service and every session container.
+# 2. Copy each inbound.db back to its old place, then remove the done-mark.
+cd data/v2-sessions
+for f in */.inbound/*/inbound.db; do
+  g=${f%%/*}; s=$(basename "$(dirname "$f")")
+  cp "$f" "$g/$s/inbound.db"
+done
+rm .inbound-moved
+# 3. Check out the older revision, rebuild host and image, start the service.
+```
+
+Moving forward again: start the newer code with every session container
+stopped. With the mark gone the move runs once more and copies each file at the
+old path over the one in `.inbound/`, so rows received while rolled back come
+along. Left in place, the mark stops the move, and those rows stay stranded at
+the old path.

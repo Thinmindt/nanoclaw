@@ -9,19 +9,22 @@ Schemas live in `src/db/schema.ts` as the `INBOUND_SCHEMA` and `OUTBOUND_SCHEMA`
 ## 1. Session folder layout
 
 ```
-data/v2-sessions/<agent_group_id>/<session_id>/
-  inbound.db              ← host writes, container reads (read-only open)
+data/v2-sessions/<agent_group_id>/<session_id>/      ← mounted read-write at /workspace
   outbound.db             ← container writes, host reads (read-only open)
   .heartbeat              ← mtime touched by container (not a DB write)
   inbox/<message_id>/     ← user attachments, decoded from inbound message content
   outbox/<message_id>/    ← attachments the agent produced
+data/v2-sessions/<agent_group_id>/.inbound/<session_id>/   ← mounted read-only at /mailbox
+  inbound.db              ← host writes, container reads
 ```
 
-The session directory itself is mounted read-write into the container (`src/container-runner.ts`) — read-only is *not* a mount property. The SQLite driver opens `inbound.db` with `{ readonly: true }` in `container/agent-runner/src/mailbox/sqlite/connection.ts`.
+`inbound.db` lives in a host-only folder that the container mounts read-only (`src/container-runner.ts`), so a seat cannot write the messages, tasks or answers it receives. The runner also opens it with `{ readonly: true }` (`container/agent-runner/src/mailbox/sqlite/connection.ts`, the one path constant). Because the reader cannot roll back a journal the host left mid-write, a failed read is retried on the next poll; the host's sweep opens the file read-write and clears it.
 
-One session = one folder = one pair of DBs. The `agent_group_id` parent directory also holds per-group state (`.claude-shared/`) that is shared across every session of that agent group. (The agent-runner source is not copied per group — it's a shared read-only mount from `container/agent-runner/src` into every container; see `src/container-runner.ts`.)
+One session = one folder for outbound plus one host-only folder for inbound. The `agent_group_id` parent directory also holds per-group state (`.claude-shared/`) that is shared across every session of that agent group. (The agent-runner source is not copied per group — it's a shared read-only mount from `container/agent-runner/src` into every container; see `src/container-runner.ts`.)
 
-Path helpers in `src/session-manager.ts`: `sessionDir()`, `inboundDbPath()`, `outboundDbPath()`, `heartbeatPath()`.
+Path helpers: `src/mailbox/sqlite/paths.ts` (`inboundDbPath()`, `outboundDbPath()`, `inboundMailboxDir()`; the only place the host builds these) and `src/session-manager.ts` (`sessionDir()`, `heartbeatPath()`).
+
+Installs from before this layout had `inbound.db` inside the session folder. The host moves each one once, at start, before anything opens a mailbox (`src/mailbox/sqlite/move-inbound.ts`): it refuses to run, and the host does not start, while the runtime lists a running session container; it copies the rows into a file it creates; it logs and skips an old path that is not a regular file; and it writes `data/v2-sessions/.inbound-moved`, after which the old path is never read. To go back, see the roll-back section of [agent-mailbox-seam-migration.md](agent-mailbox-seam-migration.md).
 
 ---
 

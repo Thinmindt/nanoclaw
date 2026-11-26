@@ -234,8 +234,9 @@ describe('writeSessionMessage re-provisions a deleted session folder', () => {
   });
 
   it('re-creates the folder + inbound.db and does not throw when the row still exists', async () => {
-    // Operator resets a stuck session by deleting its folder; the row survives.
+    // Operator resets a stuck session by deleting its folder and its incoming folder; the row survives.
     fs.rmSync(sessionDir(AG, SESS), { recursive: true, force: true });
+    fs.rmSync(path.dirname(inboundDbPath(AG, SESS)), { recursive: true, force: true });
     expect(fs.existsSync(inboundDbPath(AG, SESS))).toBe(false);
 
     await expect(

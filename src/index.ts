@@ -5,7 +5,7 @@
  * start delivery polls, start sweep, handle shutdown.
  */
 import { backfillContainerConfigs } from './backfill-container-configs.js';
-import { CENTRAL_DB_PATH } from './config.js';
+import { CENTRAL_DB_PATH, INSTALL_SLUG } from './config.js';
 import { enforceStartupBackoff, resetCircuitBreaker } from './circuit-breaker.js';
 import {
   abortGatewaySessionObservers,
@@ -23,6 +23,7 @@ import { startHostModules, stopHostModules } from './host-lifecycle.js';
 import { startGatewayApprovalCoordinator, stopGatewayApprovalCoordinator } from './gateway-approval-coordinator.js';
 import { startGatewayAvailabilityMonitor } from './gateway-availability.js';
 import { getGatewayProvider } from './gateway-providers/index.js';
+import { moveInboundMailboxes } from './mailbox/sqlite/move-inbound.js';
 import { routeInbound } from './router.js';
 import { log } from './log.js';
 import { enforceUpgradeTripwire } from './upgrade-state.js';
@@ -95,6 +96,8 @@ async function main(): Promise<void> {
 
   // Prepare the runtime; inbound routing waits until approval health and adoption are ready.
   await getSessionDriver().ensureReady?.();
+  // Before any mailbox opens; throws (and the host does not start) while a session container runs.
+  await moveInboundMailboxes(() => getSessionDriver().listSessions(INSTALL_SLUG));
   await startHostInstanceLease();
   let releaseInbound!: () => void;
   const inboundReady = new Promise<void>((resolve) => {
