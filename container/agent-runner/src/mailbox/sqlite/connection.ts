@@ -25,6 +25,7 @@ const DEFAULT_OUTBOUND_PATH = '/workspace/outbound.db';
 let _inbound: Database | null = null;
 let _outbound: Database | null = null;
 let _testMode = false;
+let inboundPath = DEFAULT_INBOUND_PATH;
 
 // A VM file share such as Docker Desktop's does not carry the host's SQLite
 // locks into the container, so a read can land mid host write: the host's live
@@ -41,8 +42,8 @@ const MID_WRITE_BACKOFF_MS = 10;
  * caches across virtiofs/NFS mounts; opening costs microseconds. `read` must
  * return materialized rows (`.get()`/`.all()`), and may run more than once.
  */
-export function readInbound<T>(read: (db: Database) => T, path = DEFAULT_INBOUND_PATH): T {
-  if (_testMode && _inbound && path === DEFAULT_INBOUND_PATH) return read(_inbound);
+export function readInbound<T>(read: (db: Database) => T, path = inboundPath): T {
+  if (_testMode && _inbound && path === inboundPath) return read(_inbound);
   const deadline = Date.now() + MID_WRITE_RETRY_MS;
   for (;;) {
     const db = new Database(path, { readonly: true });
@@ -235,9 +236,17 @@ export function initTestSessionDb(): { inbound: Database; outbound: Database } {
   return { inbound: _inbound, outbound: _outbound };
 }
 
+/** Tests only: read inbound from a real file through fresh read-only connections, as the runner does. */
+export function useInboundFileForTests(file: string): void {
+  _inbound?.close();
+  _inbound = null;
+  inboundPath = file;
+}
+
 export function closeSessionDb(): void {
   _inbound?.close();
   _inbound = null;
+  inboundPath = DEFAULT_INBOUND_PATH;
   _testMode = false;
   _outbound?.close();
   _outbound = null;

@@ -126,7 +126,16 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
   while (true) {
     if (config.signal?.aborted) return;
     // Skip system messages — they're responses for MCP tools (e.g., ask_user_question)
-    const messages = getPendingMessages(isFirstPoll).filter((m) => m.kind !== 'system');
+    let messages: MessageInRow[];
+    try {
+      messages = getPendingMessages(isFirstPoll).filter((m) => m.kind !== 'system');
+    } catch (err) {
+      // A journal the host left mid-write cannot be rolled back through the
+      // read-only mount; the host's sweep clears it, so try again next poll.
+      log(`Mailbox read failed; retrying next poll: ${err instanceof Error ? err.message : String(err)}`);
+      await sleep(POLL_INTERVAL_MS);
+      continue;
+    }
     isFirstPoll = false;
     pollCount++;
 
