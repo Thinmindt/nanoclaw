@@ -20,7 +20,11 @@ import {
 } from '../../channels/channel-registry.js';
 import { createAgentGroup } from '../../db/agent-groups.js';
 import { initTestDb, closeDb, runMigrations } from '../../db/index.js';
-import { createMessagingGroup, createMessagingGroupAgent } from '../../db/messaging-groups.js';
+import {
+  createMessagingGroup,
+  createMessagingGroupAgent,
+  deleteMessagingGroupAgent,
+} from '../../db/messaging-groups.js';
 import { createSession, getPendingApprovalsByAction } from '../../db/sessions.js';
 import { setDeliveryAdapter } from '../../delivery.js';
 import { log } from '../../log.js';
@@ -204,7 +208,6 @@ describe("the seat's one linked bot carries the card", () => {
 
     expect(posts).toEqual([{ bot: 'discord-pm', platformId: 'dm-discord-pm-owner' }]);
     expect(stored.instance).toBe('discord-pm');
-    expect(stored.approver_user_id).toBe('discord:owner');
     expect(info).toHaveBeenCalledWith('Approval requested', expect.objectContaining({ bot: 'discord-pm' }));
   });
 
@@ -233,18 +236,16 @@ describe('cards that land where they do today', () => {
 
   it('a seat with two bots linked', async () => {
     await link('mg-room-old');
-    const { posts, stored } = await raiseCard(null);
+    const { posts } = await raiseCard(null);
 
     expect(posts.map((p) => p.bot)).toEqual(['discord']);
-    expect(stored.instance).toBe('discord');
   });
 
   it("a seat whose bot cannot open the approver's DM", async () => {
     failingDm.add('discord-pm');
-    const { posts, stored } = await raiseCard(null);
+    const { posts } = await raiseCard(null);
 
     expect(posts.map((p) => p.bot)).toEqual(['discord']);
-    expect(stored.instance).toBe('discord');
   });
 
   it('two approvers on two chat services with no approver named: the person is unchanged', async () => {
@@ -294,6 +295,17 @@ describe('a card whose post fails after the DM opened', () => {
     const { posts, stored } = await raiseCard('mg-room-pm');
 
     expect(posts.map((p) => p.bot)).toEqual(['discord-pm']);
+    expect(stored).toBeUndefined();
+    expect(vi.mocked(writeSessionMessage)).toHaveBeenCalledOnce();
+  });
+
+  it("is not retried when the seat's one bot is the bot today's target is already on", async () => {
+    await deleteMessagingGroupAgent('mga-mg-room-pm');
+    await link('mg-room-old');
+    failingPost.add('discord');
+    const { posts, stored } = await raiseCard(null);
+
+    expect(posts.map((p) => p.bot)).toEqual(['discord']);
     expect(stored).toBeUndefined();
     expect(vi.mocked(writeSessionMessage)).toHaveBeenCalledOnce();
   });

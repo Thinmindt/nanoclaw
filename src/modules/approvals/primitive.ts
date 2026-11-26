@@ -335,7 +335,7 @@ export async function seatLinkedBot(agentGroupId: string, channelType: string): 
   const bots = new Set(
     (await getMessagingGroupsByAgentGroup(agentGroupId))
       .filter((mg) => mg.channel_type === channelType)
-      .map((mg) => mg.instance ?? mg.channel_type),
+      .map((mg) => mg.instance),
   );
   return bots.size === 1 ? [...bots][0] : undefined;
 }

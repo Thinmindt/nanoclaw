@@ -160,11 +160,12 @@ every reply arrives under the same name. To give each agent group its own name
 and picture, add a bot per agent. The bot set up above keeps the instance key
 `discord`, its `.env` keys and the owner's DM with it. An approval card from a
 session with no chat (a scheduled task), or from a room the agent has left,
-comes through the agent's own bot once the agent is wired to exactly one bot;
-otherwise it lands in the owner's DM with the bot above. Each further bot
-registers as `discord-<name>`, where `<name>` is a short lowercase label
-(letters, digits, dashes). Name it by role, for example `architect`, so the key
-outlives any renaming of the agent.
+comes through the agent's own bot once the agent is wired to exactly one bot.
+Otherwise a card from a room comes through that room's bot, and a card with no
+room through the bot of the approver's cached DM (the bot above, unless a later
+card moved it). Each further bot registers as `discord-<name>`, where `<name>`
+is a short lowercase label (letters, digits, dashes). Name it by role, for
+example `architect`, so the key outlives any renaming of the agent.
 
 For each further bot, in the Developer Portal:
 
