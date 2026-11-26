@@ -130,10 +130,6 @@ export function saveMessageBody(seq: number, inboxDir = INBOX_DIR): { text: stri
   };
 }
 
-function reply(text: string, isError = false) {
-  return { content: [{ type: 'text' as const, text: isError ? `Error: ${text}` : text }], isError };
-}
-
 export const saveMessage: McpToolDefinition = {
   tool: {
     name: 'save_message',
@@ -152,14 +148,10 @@ export const saveMessage: McpToolDefinition = {
     },
   },
   async handler(args) {
-    const seq = Number(args.messageId);
-    if (!seq) return reply('messageId is required', true);
-    try {
-      const saved = saveMessageBody(seq);
-      return 'error' in saved ? reply(saved.error, true) : reply(saved.text);
-    } catch (error) {
-      return reply(`could not save #${seq}: ${error instanceof Error ? error.message : String(error)}`, true);
-    }
+    const saved = saveMessageBody(Number(args.messageId));
+    return 'error' in saved
+      ? { content: [{ type: 'text' as const, text: `Error: ${saved.error}` }], isError: true }
+      : { content: [{ type: 'text' as const, text: saved.text }] };
   },
 };
 
