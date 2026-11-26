@@ -22,7 +22,11 @@
  * if either module becomes genuinely optional (see REFACTOR_PLAN open q #3).
  */
 import { normalizeOptions, type RawOption } from '../../channels/ask-question.js';
-import { getMessagingGroup } from '../../db/messaging-groups.js';
+import {
+  getMessagingGroup,
+  getMessagingGroupAgentByPair,
+  getMessagingGroupsByAgentGroup,
+} from '../../db/messaging-groups.js';
 import { createPendingApproval, deletePendingApproval, getSession } from '../../db/sessions.js';
 import { getDeliveryAdapter } from '../../delivery.js';
 import { requestWake } from '../../request-wake.js';
@@ -295,7 +299,7 @@ export async function requestApproval(opts: RequestApprovalOptions): Promise<voi
       );
       return true;
     } catch (err) {
-      log.error('Failed to deliver approval card', { action, approvalId, err });
+      log.error('Failed to deliver approval card', { action, approvalId, bot: mg.instance, err });
       // This target never saw the card — remove the row so it can't linger as
       // a pending approval nobody can act on.
       await deletePendingApproval(approvalId);
@@ -303,10 +307,35 @@ export async function requestApproval(opts: RequestApprovalOptions): Promise<voi
     }
   };
 
-  if (!(await postCard(target.messagingGroup))) {
-    await notifyAgent(session, `${action} failed: could not deliver approval request to ${target.userId}.`);
-    return;
-  }
+  // A session with no chat, or on a chat its seat has left, would send the card
+  // through whatever bot today's target is on. Send it to the same person
+  // through the seat's one linked bot instead, with today's target as the retry.
+  const originLinked = origin && (await getMessagingGroupAgentByPair(origin.id, session.agent_group_id));
+  const bot = originLinked
+    ? undefined
+    : await seatLinkedBot(session.agent_group_id, target.messagingGroup.channel_type);
+  const seatDm =
+    bot && bot !== target.messagingGroup.instance ? await ensureUserDm(target.userId, { instance: bot }) : null;
 
-  log.info('Approval requested', { action, approvalId, agentName, approver: target.userId });
+  for (const mg of seatDm ? [seatDm, target.messagingGroup] : [target.messagingGroup]) {
+    if (await postCard(mg)) {
+      log.info('Approval requested', { action, approvalId, agentName, approver: target.userId, bot: mg.instance });
+      return;
+    }
+  }
+  await notifyAgent(session, `${action} failed: could not deliver approval request to ${target.userId}.`);
+}
+
+/**
+ * The one bot a seat is linked through on a chat service, or undefined when
+ * it has none there or more than one. Linked chats come back in no order, so
+ * the rule is "exactly one distinct bot", never "the first row".
+ */
+export async function seatLinkedBot(agentGroupId: string, channelType: string): Promise<string | undefined> {
+  const bots = new Set(
+    (await getMessagingGroupsByAgentGroup(agentGroupId))
+      .filter((mg) => mg.channel_type === channelType)
+      .map((mg) => mg.instance ?? mg.channel_type),
+  );
+  return bots.size === 1 ? [...bots][0] : undefined;
 }

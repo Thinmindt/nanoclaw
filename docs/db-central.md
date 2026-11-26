@@ -146,7 +146,7 @@ CREATE TABLE user_dms (
 );
 ```
 
-Populated lazily by `ensureUserDm()` in `src/user-dm.ts`. Cold DMs resolve via the channel's default adapter instance — `PRIMARY KEY (user_id, channel_type)` is per-platform, not per-instance.
+Populated lazily by `ensureUserDm()` in `src/modules/permissions/user-dm.ts`, for the channel's default adapter instance only — `PRIMARY KEY (user_id, channel_type)` is per-platform, not per-instance, so a named instance's DM is resolved again each time and never cached. A cold DM with no instance named follows this row. An approval card sent through an agent's one wired bot, when that bot is the default instance, rewrites the row to that bot's DM (`requestApproval` in `src/modules/approvals/primitive.ts`).
 
 ### 1.8 `sessions`
 
