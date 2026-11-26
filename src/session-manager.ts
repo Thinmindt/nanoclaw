@@ -285,8 +285,8 @@ export async function writeSessionMessage(
     onWake?: boolean;
   },
 ): Promise<void> {
-  // Documented reset: operators `rm -rf` a session folder to clear a stuck
-  // session. The sessions row survives, so the next message takes the
+  // Documented reset: operators `rm -rf` a session folder and its `.inbound/`
+  // folder to clear a stuck session. The sessions row survives, so the next message takes the
   // existing-session path and lands here with a missing mailbox — the open
   // below would throw and the message would be logged-and-dropped forever.
   // Re-provision the folder + mailbox (initSessionFolder is idempotent) so the

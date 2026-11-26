@@ -58,6 +58,7 @@ import {
 import { releaseGatewaySession, type GatewaySessionControl } from './gateway-session-lifecycle.js';
 import { initGroupFilesystem } from './group-init.js';
 import { getAgentMailbox } from './mailbox/index.js';
+import { inboundMailboxDir } from './mailbox/sqlite/paths.js';
 import { stopTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
 import { validateAdditionalMounts } from './modules/mount-security/index.js';
@@ -1069,8 +1070,16 @@ export async function buildMounts(
   const mounts: VolumeMount[] = [];
   const scope = agentGroup.id;
 
-  // Session workspace: mailbox-selected state plus outbox and heartbeat files.
+  // Session workspace: outbound.db plus outbox, inbox and heartbeat files.
   mounts.push({ hostPath: sessDir, containerPath: '/workspace', readonly: false, mountClass: 'group-state', scope });
+  // Incoming mailbox: a host-only folder, read-only, so a seat cannot write what it receives.
+  mounts.push({
+    hostPath: inboundMailboxDir({ agentGroupId: agentGroup.id, sessionId: session.id }),
+    containerPath: '/mailbox',
+    readonly: true,
+    mountClass: 'group-state',
+    scope,
+  });
   mounts.push({
     hostPath: sessionContextPath(agentGroup.id, session.id),
     containerPath: '/app/.nanoclaw-session.json',

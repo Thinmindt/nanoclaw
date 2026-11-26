@@ -20,10 +20,11 @@ src/container-runner.ts                    container/agent-runner/src/
     │ with the session folder mounted          │ calls the agent provider,
     │ at /workspace                            │ writes replies to outbound.db
     │                                          │
-    ├── data/v2-sessions/<group>/<session>/ ──> /workspace
-    │     ├── inbound.db   (host writes, container reads RO)
+    ├── data/v2-sessions/<group>/<session>/ ──> /workspace  (read-write)
     │     ├── outbound.db  (container writes, host reads)
     │     └── .heartbeat   (container touches → /workspace/.heartbeat)
+    ├── data/v2-sessions/<group>/.inbound/<session>/ ──> /mailbox  (read-only)
+    │     └── inbound.db   (host writes, container reads)
     ├── groups/<folder> ─────────────────────> /workspace/agent  (cwd)
     ├── <group>/.claude-shared ──────────────> /home/node/.claude
     └── agent-runner src + skills ───────────> /app/src, /app/skills
@@ -40,7 +41,7 @@ src/container-runner.ts                    container/agent-runner/src/
 | **Host errors** | `logs/nanoclaw.error.log` | Delivery failures, crash-loop backoff, warnings — check this first |
 | **Host app log** | `logs/nanoclaw.log` | Full routing chain: inbound routing, container spawn/exit, delivery |
 | **Setup logs** | `logs/setup.log`, `logs/setup-steps/*.log` | Per-step install output (bootstrap, container, onecli, mounts, service) |
-| **Session inbound** | `data/v2-sessions/<group>/<session>/inbound.db` (`messages_in`) | Did the message reach the container? |
+| **Session inbound** | `data/v2-sessions/<group>/.inbound/<session>/inbound.db` (`messages_in`) | Did the message reach the container? |
 | **Session outbound** | `data/v2-sessions/<group>/<session>/outbound.db` (`messages_out`) | Did the agent produce a reply? |
 
 Containers run with `--rm`, so the container's own filesystem is gone after it exits. The host streams container **stderr** into `logs/nanoclaw.log` at debug level, tagged with `container=<group folder>`; raise the log level (below) to see it. If the agent silently failed inside an exited container, there is no persistent in-container log — reconstruct from the session DBs and the host log.
@@ -74,7 +75,7 @@ pnpm exec tsx scripts/q.ts data/v2.db "SELECT id, agent_group_id, messaging_grou
 ncl sessions list
 
 # Did the message reach the container? (inbound.db, host writes / container reads)
-pnpm exec tsx scripts/q.ts data/v2-sessions/<group>/<session>/inbound.db \
+pnpm exec tsx scripts/q.ts data/v2-sessions/<group>/.inbound/<session>/inbound.db \
   "SELECT seq, kind, status, timestamp FROM messages_in ORDER BY seq DESC LIMIT 10"
 
 # Did the agent produce a reply? (outbound.db, container writes / host reads)
@@ -169,7 +170,8 @@ grep -n "containerPath" src/container-runner.ts
 
 Expected mount targets inside the container:
 ```
-/workspace            ← session folder (inbound.db, outbound.db, .heartbeat, inbox/, outbox/)
+/workspace            ← session folder (outbound.db, .heartbeat, inbox/, outbox/)
+/mailbox              ← host-only folder holding inbound.db (read-only)
 /workspace/agent      ← agent group folder (cwd; CLAUDE.md, skills, working files)
 /home/node/.claude    ← per-group .claude-shared (Claude state, settings, history)
 /app/src              ← agent-runner source (read-only)
@@ -268,14 +270,14 @@ docker builder prune -af
 
 ## Clearing a Session
 
-Conversation continuity lives in the container-owned `session_state` table in `outbound.db` (the provider's session/continuation id). The agent's `/clear` clears it. To reset a session from the host, remove the session folder so a fresh one is provisioned on the next message:
+Conversation continuity lives in the container-owned `session_state` table in `outbound.db` (the provider's session/continuation id). The agent's `/clear` clears it. To reset a session from the host, remove the session folder and its incoming folder so fresh ones are provisioned on the next message:
 
 ```bash
 # Inspect first
 ncl sessions get <session-id>
 
-# Remove a single session's folder (host re-provisions both DBs on next message)
-rm -rf data/v2-sessions/<group>/<session>/
+# Remove a single session's folders (host re-provisions both DBs on next message)
+rm -rf data/v2-sessions/<group>/<session>/ data/v2-sessions/<group>/.inbound/<session>/
 ```
 
 ## Quick Diagnostic Script

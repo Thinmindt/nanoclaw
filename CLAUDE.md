@@ -42,10 +42,10 @@ Privilege is user-level (owner/admin), not agent-group-level. See [docs/isolatio
 
 ## Two-DB Session Split
 
-Each session has **two** SQLite files under `data/v2-sessions/<session_id>/`:
+Each session has **two** SQLite files:
 
-- `inbound.db` — host writes, container reads. `messages_in`, delivered, destinations, session_routing.
-- `outbound.db` — container writes, host reads. `messages_out`, processing_ack, session_state, container_state.
+- `inbound.db` — host writes, container reads. `messages_in`, delivered, destinations, session_routing. Lives in the host-only `data/v2-sessions/<agent-group>/.inbound/<session>/`, mounted read-only at `/mailbox`, so a seat cannot write what it receives.
+- `outbound.db` — container writes, host reads. `messages_out`, processing_ack, session_state, container_state. Lives in the session folder `data/v2-sessions/<agent-group>/<session>/`, mounted read-write at `/workspace`.
 
 Exactly one writer per file — no cross-mount lock contention. Heartbeat is a file touch at `/workspace/.heartbeat`, not a DB update. Host uses even `seq` numbers, container uses odd.
 
@@ -254,7 +254,7 @@ Check these first when something goes wrong:
 |------|-------|
 | Host logs | `logs/nanoclaw.error.log` first (delivery failures, crash-loop backoff, warnings), then `logs/nanoclaw.log` for the full routing chain |
 | Setup logs | `logs/setup.log` (overall), `logs/setup-steps/*.log` (per-step: bootstrap, environment, container, gateway, mounts, service, etc.) |
-| Session DBs | `data/v2-sessions/<agent-group>/<session>/` — `inbound.db` (`messages_in`: did the message reach the container?), `outbound.db` (`messages_out`: did the agent produce a response?) |
+| Session DBs | `data/v2-sessions/<agent-group>/.inbound/<session>/inbound.db` (`messages_in`: did the message reach the container?), `data/v2-sessions/<agent-group>/<session>/outbound.db` (`messages_out`: did the agent produce a response?) |
 
 Note: container logs are lost after the container exits (`--rm` flag). If the agent silently failed inside the container, there's no persistent log to inspect.
 

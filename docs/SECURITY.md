@@ -39,7 +39,8 @@ spawn. For the default (Claude) provider these are:
 
 | Container path | Host source | Mode | Purpose |
 |---|---|---|---|
-| `/workspace` | `data/v2-sessions/<group>/<session>/` | RW | Session folder — `inbound.db`, `outbound.db`, `outbox/`, `.claude/` |
+| `/workspace` | `data/v2-sessions/<group>/<session>/` | RW | Session folder — `outbound.db`, `outbox/`, `.claude/` |
+| `/mailbox` | `data/v2-sessions/<group>/.inbound/<session>/` | RO | `inbound.db`: what the seat receives, which it cannot write |
 | `/workspace/agent` | `groups/<folder>/` | RW | Agent working files, standing instructions, and shared memory tree |
 | `/workspace/agent/container.json` | group `container.json` | RO | Container config — readable, not writable |
 | `/workspace/agent/CLAUDE.md` | composed `CLAUDE.md` | RO | The complete project document, every instruction source inlined; regenerated every spawn |

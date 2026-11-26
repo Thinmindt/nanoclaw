@@ -1,7 +1,8 @@
 // Message-activity reader for clidash.
 //
 // ncl has no `messages` resource — message data lives in the per-session SQLite
-// DBs (`data/v2-sessions/<group>/<session>/{inbound,outbound}.db`). We read them
+// DBs (`data/v2-sessions/<group>/<session>/outbound.db` and the host-only
+// `data/v2-sessions/<group>/.inbound/<session>/inbound.db`). We read them
 // read-only with Node's built-in `node:sqlite` (no new dependency) and aggregate
 // per-session in/out totals + a daily time-series for charting.
 
@@ -70,12 +71,13 @@ export function collectActivity(sessionsRoot, days, now) {
 
   for (const group of listDirs(sessionsRoot)) {
     for (const session of listDirs(join(sessionsRoot, group))) {
-      const base = join(sessionsRoot, group, session);
+      const inbound = join(sessionsRoot, group, '.inbound', session, 'inbound.db');
+      const outbound = join(sessionsRoot, group, session, 'outbound.db');
       // a real session dir has at least one of the two message DBs; skip shared
       // scaffolding dirs like `.claude-shared` that don't.
-      if (!existsSync(join(base, 'inbound.db')) && !existsSync(join(base, 'outbound.db'))) continue;
-      const inb = readTable(join(base, 'inbound.db'), 'messages_in');
-      const out = readTable(join(base, 'outbound.db'), 'messages_out');
+      if (!existsSync(inbound) && !existsSync(outbound)) continue;
+      const inb = readTable(inbound, 'messages_in');
+      const out = readTable(outbound, 'messages_out');
       const lastActivity = [inb.last, out.last].filter(Boolean).sort().at(-1) ?? null;
       sessions.push({ agent_group_id: group, session_id: session, in: inb.total, out: out.total, lastActivity });
       for (const [day, n] of inb.byDay) series.get(day)?.in !== undefined && (series.get(day).in += n);

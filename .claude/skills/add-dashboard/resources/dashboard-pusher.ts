@@ -540,11 +540,11 @@ function collectActivity() {
     for (const agDir of fs.readdirSync(sessionsDir).filter((d) => d.startsWith('ag-'))) {
       const agPath = path.join(sessionsDir, agDir);
       for (const sessDir of fs.readdirSync(agPath).filter((d) => d.startsWith('sess-'))) {
-        for (const [dbName, direction] of [
-          ['outbound.db', 'outbound'],
-          ['inbound.db', 'inbound'],
+        // inbound.db sits in the group's host-only `.inbound/<session>/` folder.
+        for (const [dbPath, direction] of [
+          [path.join(agPath, sessDir, 'outbound.db'), 'outbound'],
+          [path.join(agPath, '.inbound', sessDir, 'inbound.db'), 'inbound'],
         ] as const) {
-          const dbPath = path.join(agPath, sessDir, dbName);
           if (!fs.existsSync(dbPath)) continue;
           try {
             const db = new Database(dbPath, { readonly: true });
@@ -590,7 +590,7 @@ function collectMessages() {
         const inbound: unknown[] = [];
         const outbound: unknown[] = [];
 
-        const inDbPath = path.join(agPath, sessDir, 'inbound.db');
+        const inDbPath = path.join(agPath, '.inbound', sessDir, 'inbound.db');
         if (fs.existsSync(inDbPath)) {
           try {
             const db = new Database(inDbPath, { readonly: true });

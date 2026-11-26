@@ -438,14 +438,13 @@ This is documented as a pattern, not a built-in feature.
 
 ## Design Decisions
 
-**Session DB location:** Not in the agent group folder. Separate directory (e.g., `sessions/{session_id}/`). Each session gets its own folder containing `inbound.db`, `outbound.db`, and — when using the claude provider — the SDK's `.claude/` directory. The session identity IS the folder. The SDK's resume token (session id) is persisted in `outbound.db`'s `session_state` table, so a fresh container picks the conversation back up without the host tracking it centrally.
+**Session DB location:** Not in the agent group folder. Separate directory (e.g., `sessions/{session_id}/`). Each session gets its own folder containing `outbound.db` and — when using the claude provider — the SDK's `.claude/` directory. The session identity IS the folder. The SDK's resume token (session id) is persisted in `outbound.db`'s `session_state` table, so a fresh container picks the conversation back up without the host tracking it centrally.
 
 **Container mount structure:**
 
 ```
 /workspace/                 ← mount: session folder (read-write)
   .claude/                  ← Claude SDK session data / transcripts (auto-created)
-  inbound.db                ← host writes, container reads (opened read-only)
   outbound.db               ← container writes, host reads (opened read-only)
   .heartbeat                ← container touches this; host watches its mtime
   outbox/                   ← agent-runner writes outbound files here
@@ -453,9 +452,11 @@ This is documented as a pattern, not a built-in feature.
     CLAUDE.md               ← agent instructions
     skills/                 ← agent skills
     ... working files
+/mailbox/                   ← mount: the session's host-only inbound folder (read-only)
+  inbound.db                ← host writes, container reads
 ```
 
-Two directory mounts: session folder at `/workspace`, agent group folder at `/workspace/agent/`, plus nested read-only file mounts over the group dir (the composed `CLAUDE.md`, `container.json`). The agent-runner CDs into `/workspace/agent/` to run the agent. Claude SDK writes `.claude/` at `/workspace/.claude/` (root of the workspace).
+Three directory mounts: session folder at `/workspace`, agent group folder at `/workspace/agent/`, the inbound folder at `/mailbox`, plus nested read-only file mounts over the group dir (the composed `CLAUDE.md`, `container.json`). The agent-runner CDs into `/workspace/agent/` to run the agent. Claude SDK writes `.claude/` at `/workspace/.claude/` (root of the workspace).
 
 The runtime is Docker (`src/container-runtime.ts` hardcodes the `docker` binary); nested bind mounts make this layout straightforward. Directory mounts carry the bulk of the layout, so it stays close to portable for runtimes with weaker file-mount support; the nested file mounts exist to make individual files read-only on top of a read-write dir.
 

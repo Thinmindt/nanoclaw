@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import fs from 'fs';
+import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../config.js', async () => {
@@ -635,6 +636,7 @@ describe('tasks CLI resource', () => {
     );
     expect(deleted.ok).toBe(true);
     expect(fs.existsSync(mailboxPath)).toBe(false);
+    expect(fs.existsSync(path.dirname(inboundDbPath('ag-1', session_id)))).toBe(false);
     expect(fs.existsSync(runLog)).toBe(false);
     expect(await getSession(session_id)).toBeUndefined();
   });
