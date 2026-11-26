@@ -158,8 +158,13 @@ this channel with `/init-first-agent` (or `/manage-channels`).
 By default one bot speaks for every agent, so in a room shared by several agents
 every reply arrives under the same name. To give each agent group its own name
 and picture, add a bot per agent. The bot set up above keeps the instance key
-`discord`, its `.env` keys and the owner's DM with it; cards that have no
-channel of origin still land there. Each further bot registers as
+`discord`, its `.env` keys and the owner's DM with it. An approval card from a
+session with no chat (a scheduled task), or from a room the agent has left,
+comes through the agent's own bot once the agent is wired to exactly one bot.
+Otherwise a card from a room comes through that room's bot, and a card with no
+room through the bot of the approver's cached DM (the bot above, unless a later
+card moved it). Gateway cards (credentialed requests held for approval) come
+through the cached DM's bot even from a room. Each further bot registers as
 `discord-<name>`, where `<name>` is a short lowercase label (letters, digits,
 dashes). Name it by role, for example `architect`, so the key outlives any
 renaming of the agent.
