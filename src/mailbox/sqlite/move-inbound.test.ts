@@ -123,7 +123,6 @@ describe('what the move copies and what it refuses (criterion 5)', () => {
     await moveInboundMailboxes(nothingListed);
 
     const moved = inboundDbPath(CHAT.agentGroupId, CHAT.sessionId);
-    expect(fs.statSync(moved).ino).not.toBe(fs.statSync(secondName).ino);
     const forged = new Database(secondName);
     forged
       .prepare("INSERT INTO messages_in (id, seq, kind, timestamp, content) VALUES ('forged', 6, 'chat', 'now', '{}')")

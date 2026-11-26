@@ -3,7 +3,7 @@
  * inside a write leaves a real journal that the runner's read-only reader
  * cannot roll back. The poll loop must stay up through the failed reads and
  * read the rows once the journal is cleared. The host's sweep clearing that
- * journal is shown in src/mailbox/sqlite/move-inbound.test.ts; here a
+ * journal is shown in src/mailbox-journal-sweep.test.ts; here a
  * read-write open stands in for it, since the host runs under Node.
  */
 import { afterEach, expect, it } from 'bun:test';
