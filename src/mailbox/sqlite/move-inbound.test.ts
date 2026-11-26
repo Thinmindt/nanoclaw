@@ -114,6 +114,23 @@ it('keeps every row of sessions from before the upgrade, and the idle task still
   expect(due).toBe(1);
 });
 
+it('copies an older file that lacks later columns, which take their defaults', async () => {
+  fs.mkdirSync(sessionMailboxDir(CHAT), { recursive: true });
+  const old = new Database(legacyInboundDbPath(CHAT));
+  old.exec(`CREATE TABLE messages_in (id TEXT PRIMARY KEY, seq INTEGER UNIQUE, kind TEXT NOT NULL,
+    timestamp TEXT NOT NULL, status TEXT DEFAULT 'pending', content TEXT NOT NULL)`);
+  old
+    .prepare("INSERT INTO messages_in (id, seq, kind, timestamp, content) VALUES ('m1', 2, 'chat', 'now', '{}')")
+    .run();
+  old.close();
+
+  await moveInboundMailboxes(nothingListed);
+
+  expect(rows(inboundDbPath(CHAT.agentGroupId, CHAT.sessionId)).messages).toEqual([
+    expect.objectContaining({ id: 'm1', seq: 2, trigger: 1, on_wake: 0 }),
+  ]);
+});
+
 describe('what the move copies and what it refuses (criterion 5)', () => {
   it('copies into a file the host creates, so a second name the seat made reaches only the old file', async () => {
     legacySession(CHAT, [{ id: 'm1', seq: 2, kind: 'chat' }]);
@@ -129,6 +146,28 @@ describe('what the move copies and what it refuses (criterion 5)', () => {
       .run();
     forged.close();
     expect(rows(moved).messages.map((row) => (row as { id: string }).id)).toEqual(['m1']);
+  });
+
+  it('copies rows only, so a trigger the seat planted in the old file does not run on host writes', async () => {
+    legacySession(CHAT, [{ id: 'm1', seq: 2, kind: 'chat' }]);
+    const planted = new Database(legacyInboundDbPath(CHAT));
+    planted.exec(`CREATE TRIGGER forge AFTER INSERT ON messages_in BEGIN
+      INSERT INTO messages_in (id, seq, kind, timestamp, content)
+      VALUES ('forged-' || NEW.id, NEW.seq + 1, 'chat', 'now', '{}');
+    END`);
+    planted.close();
+
+    await moveInboundMailboxes(nothingListed);
+
+    const moved = new Database(inboundDbPath(CHAT.agentGroupId, CHAT.sessionId));
+    moved
+      .prepare("INSERT INTO messages_in (id, seq, kind, timestamp, content) VALUES ('m2', 4, 'chat', 'now', '{}')")
+      .run();
+    const ids = (moved.prepare('SELECT id FROM messages_in ORDER BY seq').all() as Array<{ id: string }>).map(
+      (r) => r.id,
+    );
+    moved.close();
+    expect(ids).toEqual(['m1', 'm2']);
   });
 
   it('refuses and logs an old path that is not a regular file, and keeps going', async () => {

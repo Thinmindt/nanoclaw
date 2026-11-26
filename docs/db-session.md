@@ -24,7 +24,7 @@ One session = one folder for outbound plus one host-only folder for inbound. The
 
 Path helpers: `src/mailbox/sqlite/paths.ts` (`inboundDbPath()`, `outboundDbPath()`, `inboundMailboxDir()`; the only place the host builds these) and `src/session-manager.ts` (`sessionDir()`, `heartbeatPath()`).
 
-Installs from before this layout had `inbound.db` inside the session folder. The host moves each one once, at start, before anything opens a mailbox (`src/mailbox/sqlite/move-inbound.ts`): it refuses to run, and the host does not start, while the runtime lists a running session container; it copies the rows into a file it creates; it logs and skips an old path that is not a regular file; and it writes `data/v2-sessions/.inbound-moved`, after which the old path is never read. To go back, see the roll-back section of [agent-mailbox-seam-migration.md](agent-mailbox-seam-migration.md).
+Installs from before this layout had `inbound.db` inside the session folder. The host moves each one once, at start, before anything opens a mailbox (`src/mailbox/sqlite/move-inbound.ts`): it refuses to run, and the host does not start, while the runtime lists a running session container; it creates a file with its own schema and copies only the rows in (a trigger or view in the old file stays behind); it logs and skips an old path that is not a regular file; and it writes `data/v2-sessions/.inbound-moved`, after which the old path is never read. To go back, see the roll-back section of [agent-mailbox-seam-migration.md](agent-mailbox-seam-migration.md).
 
 ---
 
