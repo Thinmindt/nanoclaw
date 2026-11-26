@@ -254,31 +254,34 @@ export async function requestApproval(opts: RequestApprovalOptions): Promise<voi
 
   const approvalId = `appr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const normalizedOptions = normalizeOptions(APPROVAL_OPTIONS);
-  await createPendingApproval({
-    approval_id: approvalId,
-    session_id: session.id,
-    request_id: approvalId,
-    action,
-    payload: JSON.stringify(payload),
-    created_at: new Date().toISOString(),
-    channel_type: target.messagingGroup.channel_type,
-    platform_id: target.messagingGroup.platform_id,
-    instance: target.messagingGroup.instance ?? null,
-    title,
-    question,
-    options_json: JSON.stringify(normalizedOptions),
-    // The DM'd approver is the identity this card was routed to; recording it
-    // makes resolution exact — only that user may decide the row.
-    approver_user_id: approverUserId ?? target.userId ?? null,
-  });
 
-  const adapter = getDeliveryAdapter();
-  if (adapter) {
+  /** Record the request against `mg` and post the card there. False when the post failed. */
+  const postCard = async (mg: MessagingGroup): Promise<boolean> => {
+    await createPendingApproval({
+      approval_id: approvalId,
+      session_id: session.id,
+      request_id: approvalId,
+      action,
+      payload: JSON.stringify(payload),
+      created_at: new Date().toISOString(),
+      channel_type: mg.channel_type,
+      platform_id: mg.platform_id,
+      instance: mg.instance ?? null,
+      title,
+      question,
+      options_json: JSON.stringify(normalizedOptions),
+      // The DM'd approver is the identity this card was routed to; recording it
+      // makes resolution exact — only that user may decide the row.
+      approver_user_id: approverUserId ?? target.userId ?? null,
+    });
+
+    const adapter = getDeliveryAdapter();
+    if (!adapter) return true;
     try {
       await adapter.deliver(
-        target.messagingGroup.channel_type,
-        target.messagingGroup.platform_id,
-        approvalCardThread(session, target.messagingGroup),
+        mg.channel_type,
+        mg.platform_id,
+        approvalCardThread(session, mg),
         'chat-sdk',
         JSON.stringify({
           type: 'ask_question',
@@ -288,16 +291,21 @@ export async function requestApproval(opts: RequestApprovalOptions): Promise<voi
           options: APPROVAL_OPTIONS,
         }),
         undefined,
-        target.messagingGroup.instance,
+        mg.instance,
       );
+      return true;
     } catch (err) {
       log.error('Failed to deliver approval card', { action, approvalId, err });
-      // The single delivery target never saw the card — remove the row so it
-      // can't linger as a pending approval nobody can act on.
+      // This target never saw the card — remove the row so it can't linger as
+      // a pending approval nobody can act on.
       await deletePendingApproval(approvalId);
-      await notifyAgent(session, `${action} failed: could not deliver approval request to ${target.userId}.`);
-      return;
+      return false;
     }
+  };
+
+  if (!(await postCard(target.messagingGroup))) {
+    await notifyAgent(session, `${action} failed: could not deliver approval request to ${target.userId}.`);
+    return;
   }
 
   log.info('Approval requested', { action, approvalId, agentName, approver: target.userId });
