@@ -95,6 +95,11 @@ function moveOne(key: MailboxSessionKey): void {
         const list = columns.map((c) => `"${c}"`).join(', ');
         db.exec(`INSERT INTO main."${table}" (${list}) SELECT ${list} FROM old."${table}"`);
       }
+      // The lazy migration backfills series_id only when the column is missing,
+      // which in the host's schema it never is; do its backfill here.
+      if (!sharedColumns(db, 'messages_in').includes('series_id')) {
+        db.exec('UPDATE main.messages_in SET series_id = id WHERE series_id IS NULL');
+      }
     })();
     db.exec('DETACH DATABASE old');
   } finally {

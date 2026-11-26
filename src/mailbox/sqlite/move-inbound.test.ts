@@ -127,7 +127,7 @@ it('copies an older file that lacks later columns, which take their defaults', a
   await moveInboundMailboxes(nothingListed);
 
   expect(rows(inboundDbPath(CHAT.agentGroupId, CHAT.sessionId)).messages).toEqual([
-    expect.objectContaining({ id: 'm1', seq: 2, trigger: 1, on_wake: 0 }),
+    expect.objectContaining({ id: 'm1', seq: 2, series_id: 'm1', trigger: 1, on_wake: 0 }),
   ]);
 });
 
