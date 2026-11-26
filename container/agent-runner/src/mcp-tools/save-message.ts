@@ -75,7 +75,7 @@ function holdsExactly(file: string, body: Buffer): boolean {
       read = fs.readSync(fd, held, total, held.length - total, null);
       total += read;
     } while (read > 0 && total < held.length);
-    return total === body.length && held.subarray(0, total).equals(body);
+    return held.subarray(0, total).equals(body);
   } finally {
     fs.closeSync(fd);
   }

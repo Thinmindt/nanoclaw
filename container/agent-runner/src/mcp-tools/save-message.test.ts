@@ -40,7 +40,14 @@ const BODY =
 
 describe('save_message', () => {
   it('writes the stored body byte for byte, attachments untouched, and returns sender, time, id, size and checksum', () => {
-    seedInbound(2, 'a2a-1', JSON.stringify({ sender: 'Architect', text: BODY }));
+    // An agent message as the host stores it: no sender in the content, so the name comes from the destination.
+    getInboundDb()
+      .prepare(
+        `INSERT INTO destinations (name, display_name, type, channel_type, platform_id, agent_group_id)
+         VALUES ('architect', 'Architect', 'agent', NULL, NULL, 'ag-architect')`,
+      )
+      .run();
+    seedInbound(2, 'a2a-1', JSON.stringify({ text: BODY }));
     fs.mkdirSync(path.join(inbox, 'a2a-1'));
     fs.writeFileSync(path.join(inbox, 'a2a-1', 'photo.jpg'), 'jpeg bytes');
 
@@ -51,7 +58,7 @@ describe('save_message', () => {
     expect('text' in saved && saved.text).toBe(
       [
         `Saved message #2 to ${bodyPath('a2a-1')}`,
-        'sender: Architect',
+        'sender: architect',
         'time: 2026-11-26T09:15:00.000Z',
         'id: a2a-1',
         `bytes: ${Buffer.byteLength(BODY)}`,
