@@ -1,4 +1,7 @@
-/** Per-message approval policies for agent-to-agent connections; no row = free flow. */
+/**
+ * Per-message approval policies for agent-to-agent connections; no row = free flow, except on a line into a
+ * seat the Scout gate guards (add-scout-gate), where no row means refused.
+ */
 import type { AgentMessagePolicy } from '../../../types.js';
 import { getDb } from '../../../db/connection.js';
 

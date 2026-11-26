@@ -18,3 +18,4 @@ import './tasks.js';
 import './calendar.js';
 import './playground.js';
 import './github.js';
+import './seat-lines.js';

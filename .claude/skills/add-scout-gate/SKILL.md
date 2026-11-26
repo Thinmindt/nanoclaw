@@ -66,6 +66,12 @@ whoever adds it. The sender is told once that no approval policy is set and that
 not help. An approved message whose policy was removed before the tap is refused the same way.
 Answers from the Scout are not affected: a pair from a gated group with no policy still flows.
 
+`ncl seat-lines` lists every seat-to-seat line, one row per from/to pair, by seat name, with what
+the guard does with it: `held` (a policy names an approver), `refused` (a line into a gated seat
+with no policy; `refused, no such seat` when the target is no seat), or `free flow` (no policy;
+`free flow, self` for a seat's line to itself). It runs on the host only and writes nothing. A
+line added later shows up with its decision; nothing in the listing names the lines.
+
 Known limits of a pattern gate, stated so nobody relies on more than it does: a bare host on an
 ending the list does not know crosses when it carries no path; a secret split into short
 chunks crosses; a private fact in plain words that match no term crosses; a term spelled with
@@ -75,9 +81,10 @@ characters split by a space. Two-letter endings that are also file extensions (`
 cross. On the way back, the cut comes after the line checks, so a cut that lands exactly where
 an override phrase ends leaves that last line in place.
 
-One piece: `src/modules/a2a-gate/`, called from the agent-to-agent module: twice in the
+Two pieces. `src/modules/a2a-gate/`, called from the agent-to-agent module: twice in the
 `a2a.send` decision (refuse on content, refuse a line with no policy) and once in the route that
-writes to the target's inbox (reduce).
+writes to the target's inbox (reduce). And `src/cli/resources/seat-lines.ts`, the listing, which
+calls the policy lookup and the gate's `gatedGroup`, the same function the gate calls.
 
 ## Steps
 
@@ -93,11 +100,21 @@ Run every step from the NanoClaw project root. Each step is safe to re-run.
 .claude/skills/add-scout-gate/resources/a2a-gate/inbound.test.ts  → src/modules/a2a-gate/inbound.test.ts
 .claude/skills/add-scout-gate/resources/a2a-gate/gate.test.ts     → src/modules/a2a-gate/gate.test.ts
 .claude/skills/add-scout-gate/resources/a2a-gate/skill-sync.test.ts → src/modules/a2a-gate/skill-sync.test.ts
+.claude/skills/add-scout-gate/resources/seat-lines.ts             → src/cli/resources/seat-lines.ts
+.claude/skills/add-scout-gate/resources/seat-lines.test.ts        → src/cli/resources/seat-lines.test.ts
 ```
 
 ```bash
 mkdir -p src/modules/a2a-gate
 cp .claude/skills/add-scout-gate/resources/a2a-gate/*.ts src/modules/a2a-gate/
+cp .claude/skills/add-scout-gate/resources/seat-lines.ts .claude/skills/add-scout-gate/resources/seat-lines.test.ts src/cli/resources/
+```
+
+Then register the listing: append this line to `src/cli/resources/index.ts`, after the last
+`import`, unless it is already there:
+
+```typescript
+import './seat-lines.js';
 ```
 
 - `scrub.test.ts` unit-tests the outbound rules above, one case per rule, each newly refused
@@ -108,7 +125,14 @@ cp .claude/skills/add-scout-gate/resources/a2a-gate/*.ts src/modules/a2a-gate/
   and override lines (also in full-width letters, behind a separator or a lone carriage return,
   and spelled with separators or fillers for spaces), the cut at the cap, the header, and that a
   reduced answer passes a second reduction unchanged.
-- `skill-sync.test.ts` fails when a file here and its copy under `src/modules/a2a-gate/` differ.
+- `skill-sync.test.ts` fails when a file here and its copy under `src/modules/a2a-gate/` or
+  `src/cli/resources/` differ.
+- `seat-lines.test.ts` puts five cases through the real `a2a.send` guard and through `ncl
+  seat-lines` and asserts the named decision on both: a line into the Scout with a policy is
+  held, without one refused, a line between two ordinary seats free flow, a line to no seat
+  refused, and the Scout's line to itself free flow with and without a policy. It also checks
+  one row per pair, the folder where seat names repeat, no channel lines, and that an agent
+  caller is refused. It is the alarm if the listing and the guard drift apart.
 - `gate.test.ts` drives messages through the real `routeAgentMessage` with a test DB: a clean
   question on a line with no policy is refused with one note saying so, an approved message
   whose policy is gone by the tap is refused with one readable note, text of 1501 characters is
@@ -164,7 +188,22 @@ held answer is reduced after the tap like any other. If a block is already prese
 Nothing is added to `src/modules/index.ts`; the dynamic imports at the call sites are the whole
 wiring.
 
-Then correct the three places that say a pair with no policy is free flow:
+Then correct the four places that say a pair with no policy is free flow:
+
+- `src/modules/agent-to-agent/db/agent-message-policies.ts`, the comment at the top: replace
+
+  ```
+  /** Per-message approval policies for agent-to-agent connections; no row = free flow. */
+  ```
+
+  with
+
+  ```
+  /**
+   * Per-message approval policies for agent-to-agent connections; no row = free flow, except on a line into a
+   * seat the Scout gate guards (add-scout-gate), where no row means refused.
+   */
+  ```
 
 - `guard.ts`, header comment: replace the line
 
@@ -189,7 +228,7 @@ Then correct the three places that say a pair with no policy is free flow:
 
 ```bash
 pnpm run build
-pnpm exec vitest run src/modules/a2a-gate src/modules/agent-to-agent src/guard
+pnpm exec vitest run src/modules/a2a-gate src/modules/agent-to-agent src/guard src/cli/resources/seat-lines.test.ts
 ```
 
 ### 4. Write the lists on the host
@@ -256,7 +295,8 @@ is added.
   `data/a2a-gate/` is not readable by the host's user.
 - **Every clean question on one line is refused with "no approval policy"**: the pair has no
   policy. `ncl policies set --from <sender-id> --to <scout-id> --approver <owner-user-id>`; `ncl
-  policies list` shows a row to the Scout for each agent with a destination to it.
+  seat-lines` shows every line and its decision, and a line into the Scout reads `held` once its
+  policy is set.
 - **A legitimate question is refused as `host`**: a file name whose extension is on the ending
   list (`index.app`, `System.IO`) matches. Rephrase without the file name; the Scout does not
   need it.
