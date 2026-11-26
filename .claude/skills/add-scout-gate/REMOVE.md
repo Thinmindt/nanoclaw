@@ -34,12 +34,21 @@ with the line
 In `src/cli/resources/policies.ts`, take out ", except to
 a target the Scout gate guards (add-scout-gate), which refuses the pair" and "; a line to a
 Scout-gated target is refused instead"; in `docs/db-central.md`, take out ", except to a target the
-add-scout-gate skill gates, which refuses the pair".
+add-scout-gate skill gates, which refuses the pair". In
+`src/modules/agent-to-agent/db/agent-message-policies.ts`, replace the four-line comment at the top
+that ends "where no row means refused." with the line
 
-## 2. Remove the copied files
+```
+/** Per-message approval policies for agent-to-agent connections; no row = free flow. */
+```
+
+## 2. Remove the listing and the copied files
+
+Delete the line `import './seat-lines.js';` from `src/cli/resources/index.ts`, then:
 
 ```bash
 rm -rf src/modules/a2a-gate
+rm -f src/cli/resources/seat-lines.ts src/cli/resources/seat-lines.test.ts
 ```
 
 ## 3. Build, stamp and restart

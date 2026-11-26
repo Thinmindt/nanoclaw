@@ -104,7 +104,7 @@ function readTargets(): string[] {
 }
 
 /** Whether a group is gated: named `scout`, or listed by id in `targets`. Returns the display name too. */
-async function gatedGroup(id: string): Promise<{ gated: boolean; name: string }> {
+export async function gatedGroup(id: string): Promise<{ gated: boolean; name: string }> {
   const group = await getAgentGroup(id);
   const name = group?.name ?? id;
   return { gated: name.toLowerCase() === GATED_NAME || readTargets().includes(id), name };
