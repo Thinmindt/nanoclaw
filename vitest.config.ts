@@ -7,9 +7,11 @@ import { defineConfig } from 'vitest/config';
 // One temp root per run, so two suites running at once (two worktrees) never share a folder.
 // Tests write under process.env.TEST_TMP; TMPDIR points os.tmpdir() there too, so every mkdtemp
 // lands in it. The prefix is short because tests put Unix sockets under os.tmpdir() (macOS: 104 bytes).
-// Removed when vitest exits, which also covers Ctrl-C and a run that matches no file, where vitest
-// skips its global teardown. A watch-mode config reload makes a second root inside the first, and
-// the first one's removal may take it before its own hook runs: hence force.
+// Removed when vitest exits, which also covers Ctrl-C in a terminal and a run that matches no file,
+// where vitest skips its global teardown. A signal to the main process alone, or any signal after a
+// watch-mode config reload, still leaves the root: vitest then exits without 'exit' or before its
+// workers stop. A config reload also makes a second root inside the first, which the first one's
+// removal may take before the second's own hook runs: hence force.
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nct-'));
 process.env.TEST_TMP = root;
 process.env.TMPDIR = root;
