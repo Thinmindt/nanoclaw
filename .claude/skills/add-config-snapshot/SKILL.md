@@ -60,7 +60,9 @@ pnpm run build
 ```
 
 - `snapshot.test.ts` drives the real script against a migrated scratch DB and a stand-in gateway: a
-  full write (an env file with a planted gateway key that must not appear), the rename, and a refusal for a planted unknown key and for a credential-shaped value.
+  full write (an env file with a planted gateway key that must not appear), the rename, the
+  read-only DB open, the allowlist flags agreeing with the host's own loader, and a failed run
+  (unknown key, credential-shaped value, missing field, gateway error) leaving the last good copy.
 - `skill-sync.test.ts` fails if a file in `src/config-snapshot/` and its copy in `resources/` differ.
   `resources/` is the canonical copy.
 
@@ -111,8 +113,13 @@ systemctl --user edit nanoclaw-config-snapshot.timer
   then build. Moving the gateway past the pinned version is the likeliest cause.
 - **"missing field …":** a gateway past the pinned version, or a changed allowlist format, no longer
   returns a field the snapshot picks by name. Read the new shape and update the pick in both copies.
-- **"GET … → HTTP <status>":** the gateway refused or failed that call. Check the gateway is up
-  (`docker ps`) and reachable at the URL in the service unit; nothing here needs changing.
+- **"GET … → HTTP 5xx":** the gateway answered but failed. Read `docker logs onecli`; the next hourly
+  run retries.
+- **"GET … → HTTP 401" or "404":** the gateway no longer serves that call the way the pinned version
+  did (a moved endpoint, or auth now required). Compare the running image with
+  `.claude/skills/add-onecli/versions.json` and update the call in both copies of `snapshot.ts`.
+- **"fetch failed":** the gateway is down or not at the URL in the service unit. Check `docker ps`
+  and the unit's URL.
 - **"credential-shaped value at …":** a value at that path looks like a token. Find and remove it at
   its source; do not widen the check.
 - **`systemctl --user` fails with "Failed to connect to bus":** the shell has no user session. Log in

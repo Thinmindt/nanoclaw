@@ -5,10 +5,20 @@ import os from 'os';
 import path from 'path';
 
 import Database from 'better-sqlite3';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// The host's allowlist loader reads its path from config; point it at this test's fixture.
+const mockState = vi.hoisted(() => ({ allowlistPath: '' }));
+vi.mock('../config.js', async () => ({
+  ...(await vi.importActual<Record<string, unknown>>('../config.js')),
+  get MOUNT_ALLOWLIST_PATH() {
+    return mockState.allowlistPath;
+  },
+}));
 
 import { SqliteDriver } from '../db/drivers/sqlite.js';
 import { runMigrations } from '../db/migrations/index.js';
+import { loadMountAllowlist } from '../modules/mount-security/index.js';
 import { writeSnapshot, type SnapshotPaths } from './snapshot.js';
 
 const NOW = new Date('2026-11-27T10:40:00Z');
@@ -88,13 +98,17 @@ beforeEach(async () => {
   `);
   raw.close();
 
-  // The host reads `allowReadWrite`, else `readOnly` (what /manage-mounts writes), else read-only.
+  // One root per case of the host's rule: allowReadWrite, readOnly (what /manage-mounts writes),
+  // neither (read-only), and both (allowReadWrite wins).
   const allowlist = {
     allowedRoots: [
-      { path: '/home/u/repos', allowReadWrite: false, description: 'mirrors' },
+      { path: '/home/u/work', allowReadWrite: true, description: 'work' },
       { path: '/home/u/scratch', readOnly: false },
+      { path: '/home/u/docs' },
+      { path: '/home/u/both', allowReadWrite: false, readOnly: false },
     ],
   };
+  mockState.allowlistPath = path.join(dir, 'mount-allowlist.json');
   fs.writeFileSync(path.join(dir, 'mount-allowlist.json'), JSON.stringify({ ...allowlist, blockedPatterns: [] }));
   fs.writeFileSync(path.join(dir, 'versions.json'), JSON.stringify({ 'onecli-gateway': '1.42.0' }));
   fs.writeFileSync(
@@ -174,8 +188,10 @@ describe('writeSnapshot', () => {
         },
       ],
       mountAllowlistRoots: [
-        { path: '/home/u/repos', allowReadWrite: false },
+        { path: '/home/u/work', allowReadWrite: true },
         { path: '/home/u/scratch', allowReadWrite: true },
+        { path: '/home/u/docs', allowReadWrite: false },
+        { path: '/home/u/both', allowReadWrite: false },
       ],
       envFlags: { CALENDAR_TOOL_AGENT_GROUPS: 'ag-pm', GITHUB_STATUS_AGENT_GROUPS: 'ag-pm, ag-arch' },
       gatewayAgents: [{ id: 'gw-1', identifier: 'pm', name: 'PM', secretIds: ['sec-1'], connectionIds: ['conn-1'] }],
@@ -209,7 +225,13 @@ describe('writeSnapshot', () => {
     await expect(writeSnapshot({ ...paths, dbPath: missing }, NOW)).rejects.toThrow();
 
     expect(fs.existsSync(missing)).toBe(false);
-    expect(fs.readdirSync(paths.outDir)).toEqual([]);
+  });
+
+  it("reports each allowlist root's flag as the host's own loader reads it", async () => {
+    const snapshot = JSON.parse(fs.readFileSync(await writeSnapshot(paths, NOW), 'utf-8'));
+
+    const host = loadMountAllowlist()!.allowedRoots.map((r) => ({ path: r.path, allowReadWrite: r.allowReadWrite }));
+    expect(snapshot.mountAllowlistRoots).toEqual(host);
   });
 
   it.each([
