@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../config.js', async () => {
   const actual = await vi.importActual('../../config.js');
-  return { ...actual, DATA_DIR: '/tmp/nanoclaw-test-move-inbound' };
+  return { ...actual, DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-test-move-inbound` };
 });
 vi.mock('../../log.js', () => ({
   log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() },
@@ -19,7 +19,7 @@ import { moveInboundMailboxes } from './move-inbound.js';
 import { inboundDbPath, inboundMoveMarkPath, legacyInboundDbPath, outboundDbPath, sessionMailboxDir } from './paths.js';
 import { ensureSchema } from './session-db.js';
 
-const DATA_DIR = '/tmp/nanoclaw-test-move-inbound';
+const DATA_DIR = `${process.env.TEST_TMP}/nanoclaw-test-move-inbound`;
 const CHAT = { agentGroupId: 'ag-1', sessionId: 'sess-chat' };
 const TASK = { agentGroupId: 'ag-1', sessionId: 'sess-task' };
 

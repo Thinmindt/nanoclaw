@@ -18,10 +18,10 @@ import type { PendingApproval, Session } from '../../types.js';
 // The folder-dedupe loop is disk-aware (A4): point GROUPS_DIR at a temp root
 // so the residue-skip test controls what is on disk. Absent for every other
 // test, so their behavior is unchanged.
-const A2A_TEST_ROOT = '/tmp/nanoclaw-test-a2a-create-agent';
+const A2A_TEST_ROOT = `${process.env.TEST_TMP}/nanoclaw-test-a2a-create-agent`;
 vi.mock('../../config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../config.js')>()),
-  GROUPS_DIR: '/tmp/nanoclaw-test-a2a-create-agent/groups',
+  GROUPS_DIR: `${process.env.TEST_TMP}/nanoclaw-test-a2a-create-agent/groups`,
 }));
 
 // Mocks for the collaborators the branch decides between / depends on.

@@ -14,7 +14,7 @@ const { snapshots, listSessions, prepare } = vi.hoisted(() => {
 });
 vi.mock('./config.js', async () => {
   const actual = await vi.importActual<typeof import('./config.js')>('./config.js');
-  const root = '/tmp/nanoclaw-test-orphan-sweep';
+  const root = `${process.env.TEST_TMP}/nanoclaw-test-orphan-sweep`;
   return { ...actual, DATA_DIR: `${root}/data`, GROUPS_DIR: `${root}/groups` };
 });
 vi.mock('./drivers/index.js', () => {
@@ -104,7 +104,7 @@ afterEach(async () => {
     await vi.waitFor(() => expect(isContainerRunning('sess-1')).toBe(false));
   }
   await closeDb();
-  fs.rmSync('/tmp/nanoclaw-test-orphan-sweep', { recursive: true, force: true });
+  fs.rmSync(`${process.env.TEST_TMP}/nanoclaw-test-orphan-sweep`, { recursive: true, force: true });
 });
 
 describe('stopOrphanedSessions', () => {

@@ -1,5 +1,4 @@
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 
 import { describe, it, expect } from 'vitest';
@@ -8,7 +7,7 @@ import { createHeartbeatFileLivenessSource } from './liveness.js';
 
 describe('heartbeat-file liveness source', () => {
   it('reports the heartbeat mtime, and null when the file is absent', async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'liveness-'));
+    const dir = fs.mkdtempSync(path.join(process.env.TEST_TMP!, 'liveness-'));
     const hb = path.join(dir, '.heartbeat');
     const source = createHeartbeatFileLivenessSource(() => hb);
     const session = { id: 's-1', agent_group_id: 'g-1' };

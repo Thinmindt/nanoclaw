@@ -40,7 +40,7 @@ vi.mock('@onecli-sh/sdk', () => ({
 }));
 vi.mock('../config.js', async (original) => ({
   ...(await original<typeof import('../config.js')>()),
-  DATA_DIR: '/tmp/nanoclaw-onecli-adapter-review',
+  DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-onecli-adapter-review`,
 }));
 
 vi.mock('../log.js', () => ({
@@ -78,7 +78,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
-  fs.rmSync('/tmp/nanoclaw-onecli-adapter-review', { recursive: true, force: true });
+  fs.rmSync(`${process.env.TEST_TMP}/nanoclaw-onecli-adapter-review`, { recursive: true, force: true });
 });
 
 describe('OneCLI gateway package', () => {

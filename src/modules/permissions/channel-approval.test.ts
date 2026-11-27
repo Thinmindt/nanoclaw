@@ -93,12 +93,12 @@ vi.mock('../../config.js', async () => {
   const actual = await vi.importActual('../../config.js');
   return {
     ...actual,
-    DATA_DIR: '/tmp/nanoclaw-test-channel-approval',
-    GROUPS_DIR: '/tmp/nanoclaw-test-channel-approval/groups',
+    DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-test-channel-approval`,
+    GROUPS_DIR: `${process.env.TEST_TMP}/nanoclaw-test-channel-approval/groups`,
   };
 });
 
-const TEST_DIR = '/tmp/nanoclaw-test-channel-approval';
+const TEST_DIR = `${process.env.TEST_TMP}/nanoclaw-test-channel-approval`;
 
 beforeAll(async () => {
   await initChannelAdapters(() => ({

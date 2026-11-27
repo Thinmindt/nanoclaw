@@ -14,7 +14,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 
 vi.mock('./config.js', async () => {
   const actual = await vi.importActual('./config.js');
-  return { ...actual, DATA_DIR: '/tmp/nanoclaw-test-mailbox-journal-sweep' };
+  return { ...actual, DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-test-mailbox-journal-sweep` };
 });
 vi.mock('./container-runner.js', () => ({
   getContainerStartedAtMs: vi.fn(() => Date.now()),
@@ -29,7 +29,7 @@ import { inboundDbPath } from './mailbox/sqlite/paths.js';
 import { reconcileSession } from './reconcile-session.js';
 import { initSessionFolder, writeSessionMessage } from './session-manager.js';
 
-const TEST_DIR = '/tmp/nanoclaw-test-mailbox-journal-sweep';
+const TEST_DIR = `${process.env.TEST_TMP}/nanoclaw-test-mailbox-journal-sweep`;
 const AG = 'ag-journal';
 const SESS = 'sess-journal';
 

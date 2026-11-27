@@ -7,7 +7,6 @@
  * being ignored means silently running the wrong runtime.
  */
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -69,7 +68,7 @@ function registerFake(seen: MountPolicy[] = []): { kind: string; seen: MountPoli
 beforeEach(() => {
   vi.clearAllMocks();
   previous = process.cwd();
-  cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'ncl-driver-env-'));
+  cwd = fs.mkdtempSync(path.join(process.env.TEST_TMP!, 'ncl-driver-env-'));
   process.chdir(cwd);
 });
 

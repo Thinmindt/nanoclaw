@@ -42,7 +42,6 @@
  * file. fetch is stubbed so the setup check never reaches Discord.
  */
 import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -63,7 +62,7 @@ const records: Record<string, { status: number; body?: Record<string, string> }>
 };
 
 beforeAll(async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'discord-instances-'));
+  const dir = mkdtempSync(join(process.env.TEST_TMP!, 'discord-instances-'));
   writeFileSync(
     join(dir, '.env'),
     [

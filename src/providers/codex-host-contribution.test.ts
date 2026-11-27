@@ -17,7 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const TEST_ROOT = '/tmp/nanoclaw-codex-host-contribution-test';
+const TEST_ROOT = `${process.env.TEST_TMP}/nanoclaw-codex-host-contribution-test`;
 const DATA_DIR = path.join(TEST_ROOT, 'data');
 const GROUPS_DIR = path.join(TEST_ROOT, 'groups');
 // An old install skill may run on a new core without installing Codex's contract.
@@ -25,8 +25,8 @@ const newCoreIt = fs.existsSync(path.join(process.cwd(), 'src/provider-contracts
 
 vi.mock('../config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../config.js')>()),
-  DATA_DIR: '/tmp/nanoclaw-codex-host-contribution-test/data',
-  GROUPS_DIR: '/tmp/nanoclaw-codex-host-contribution-test/groups',
+  DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-codex-host-contribution-test/data`,
+  GROUPS_DIR: `${process.env.TEST_TMP}/nanoclaw-codex-host-contribution-test/groups`,
 }));
 
 import { buildMounts } from '../container-runner.js';

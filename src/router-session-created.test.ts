@@ -35,10 +35,10 @@ vi.mock('./container-runner.js', () => ({
 // Override DATA_DIR for tests
 vi.mock('./config.js', async () => {
   const actual = await vi.importActual('./config.js');
-  return { ...actual, DATA_DIR: '/tmp/nanoclaw-test-session-created' };
+  return { ...actual, DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-test-session-created` };
 });
 
-const TEST_DIR = '/tmp/nanoclaw-test-session-created';
+const TEST_DIR = `${process.env.TEST_TMP}/nanoclaw-test-session-created`;
 
 function now(): string {
   return new Date().toISOString();

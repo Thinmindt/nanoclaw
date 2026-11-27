@@ -8,14 +8,14 @@ import fs from 'fs';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const TEST_DIR = '/tmp/nanoclaw-test-tool-denylist';
+const TEST_DIR = `${process.env.TEST_TMP}/nanoclaw-test-tool-denylist`;
 
 vi.mock('../../config.js', async () => {
   const actual = await vi.importActual('../../config.js');
   return {
     ...actual,
-    DATA_DIR: '/tmp/nanoclaw-test-tool-denylist/data',
-    GROUPS_DIR: '/tmp/nanoclaw-test-tool-denylist/groups',
+    DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-test-tool-denylist/data`,
+    GROUPS_DIR: `${process.env.TEST_TMP}/nanoclaw-test-tool-denylist/groups`,
   };
 });
 

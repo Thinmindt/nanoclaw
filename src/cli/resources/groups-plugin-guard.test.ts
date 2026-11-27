@@ -9,7 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const TEST_ROOT = '/tmp/nanoclaw-test-cli-plugin-guard';
+const TEST_ROOT = `${process.env.TEST_TMP}/nanoclaw-test-cli-plugin-guard`;
 
 vi.mock('../../container-runner.js', () => ({
   wakeContainer: vi.fn().mockResolvedValue(undefined),
@@ -21,9 +21,9 @@ vi.mock('../../container-runner.js', () => ({
 
 vi.mock('../../config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../config.js')>()),
-  GROUPS_DIR: '/tmp/nanoclaw-test-cli-plugin-guard/groups',
-  DATA_DIR: '/tmp/nanoclaw-test-cli-plugin-guard/data',
-  TEMPLATES_DIR: '/tmp/nanoclaw-test-cli-plugin-guard/templates',
+  GROUPS_DIR: `${process.env.TEST_TMP}/nanoclaw-test-cli-plugin-guard/groups`,
+  DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-test-cli-plugin-guard/data`,
+  TEMPLATES_DIR: `${process.env.TEST_TMP}/nanoclaw-test-cli-plugin-guard/templates`,
 }));
 
 vi.mock('../../log.js', () => ({

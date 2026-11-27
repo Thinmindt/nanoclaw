@@ -41,7 +41,7 @@ vi.mock('../../container-runner.js', () => ({
 
 vi.mock('../../config.js', async () => {
   const actual = await vi.importActual('../../config.js');
-  return { ...actual, DATA_DIR: '/tmp/nanoclaw-test-approval-seat-bot' };
+  return { ...actual, DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-test-approval-seat-bot` };
 });
 
 vi.mock('../../session-manager.js', async () => {
@@ -49,7 +49,7 @@ vi.mock('../../session-manager.js', async () => {
   return { ...actual, writeSessionMessage: vi.fn() };
 });
 
-const TEST_DIR = '/tmp/nanoclaw-test-approval-seat-bot';
+const TEST_DIR = `${process.env.TEST_TMP}/nanoclaw-test-approval-seat-bot`;
 const ACTION = 'test_action';
 
 function now(): string {

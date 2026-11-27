@@ -21,10 +21,14 @@ vi.mock('./container-runner.js', () => ({
 
 vi.mock('./config.js', async () => {
   const actual = await vi.importActual<typeof import('./config.js')>('./config.js');
-  return { ...actual, DATA_DIR: '/tmp/nanoclaw-test-delivery', GROUPS_DIR: '/tmp/nanoclaw-test-delivery/groups' };
+  return {
+    ...actual,
+    DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-test-delivery`,
+    GROUPS_DIR: `${process.env.TEST_TMP}/nanoclaw-test-delivery/groups`,
+  };
 });
 
-const TEST_DIR = '/tmp/nanoclaw-test-delivery';
+const TEST_DIR = `${process.env.TEST_TMP}/nanoclaw-test-delivery`;
 
 import { initTestDb, closeDb, runMigrations, createAgentGroup, createMessagingGroup } from './db/index.js';
 import { getDeliveredIds } from './mailbox/sqlite/session-db.js';
