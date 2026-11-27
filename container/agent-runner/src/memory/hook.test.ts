@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import { runBun, type RunBunResult } from '../test-utils/run-bun.js';
 
-const BASE = '/tmp/nanoclaw-memory-hook-test';
+const BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'nanoclaw-memory-hook-test-'));
 
 function runHook(input: string): Promise<RunBunResult> {
   return runBun([path.join(import.meta.dir, 'hook.ts'), BASE], input);
