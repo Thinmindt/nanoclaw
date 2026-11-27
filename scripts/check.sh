@@ -10,7 +10,7 @@
 # install whose image to use. CONTAINER_RUNTIME is honored as build.sh does.
 #
 # Not run here, and why (scripts/check-sh.test.ts reads these "skip:" lines):
-# skip: pnpm install --frozen-lockfile (runs against the installed node_modules; a worktree's are the live install's)
+# skip: pnpm install --frozen-lockfile (never installs; it checks against the node_modules already in place)
 # skip: iron-front job (needs Go 1.26.1 and fetches stock Iron over the network)
 # skip: verify-agent-image workflow (needs ECR and GitHub OIDC)
 # skip: registry-skills workflow (reads the registry branches from local git refs)
