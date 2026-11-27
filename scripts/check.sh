@@ -38,7 +38,7 @@ image="$(container_image_base):latest"
 # image must have been built from this checkout's bun.lock (build.sh labels it).
 # A stale image passing the Bun suite would be a false green.
 echo "== Agent image $image"
-lock="$(sha256sum container/agent-runner/bun.lock | cut -d' ' -f1)"
+lock="$(shasum -a 256 container/agent-runner/bun.lock | cut -d' ' -f1)"
 label="$("$runtime" image inspect --format '{{index .Config.Labels "dev.nanoclaw.agent-runner-lock-sha256"}}' "$image")" || {
   echo "check.sh: cannot read the agent image $image: $runtime is missing or not running, or the image is not built (container/build.sh)." >&2
   exit 1
@@ -49,15 +49,15 @@ if [ "$label" != "$lock" ]; then
 fi
 
 # The runner's tests read host files by relative path, so the Bun steps run in a
-# repo-shaped copy: the checkout's tracked and new files (not ignored ones such
-# as data/ and groups/), with the runner's node_modules pointing at the image's.
-git ls-files -z --cached --others --exclude-standard \
+# repo-shaped copy of the checkout's tracked files (as CI sees them, so a new
+# file counts once it is added), with the runner's node_modules the image's.
+git ls-files -z \
   | tar --null -T - -cf - \
   | "$runtime" run --rm -i --init --network none --entrypoint bash "$image" -c '
       set -euo pipefail
       mkdir /tmp/repo
       tar -C /tmp/repo -xf -
-      ln -sfn /app/node_modules /tmp/repo/container/agent-runner/node_modules
+      ln -s /app/node_modules /tmp/repo/container/agent-runner/node_modules
       cd /tmp/repo/container/agent-runner
       echo "== Typecheck container (in the image)"
       node_modules/.bin/tsc -p tsconfig.json --noEmit

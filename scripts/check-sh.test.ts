@@ -1,12 +1,15 @@
 /**
- * Drift test between CI and the local bar. Every run step of ci.yml's test and
- * skill-pins jobs is either run by scripts/check.sh (in the form below where
- * the local step differs) or on check.sh's "skip:" list with its reason.
- * One-directional: check.sh may run more than CI does.
+ * scripts/check.sh, the local bar. The drift test: every run step of ci.yml's
+ * test and skill-pins jobs is either run by check.sh (in the form below where
+ * the local step differs) or on its "skip:" list with its reason.
+ * One-directional: check.sh may run more than CI does. Then the image check,
+ * which must fail rather than let a missing or stale image pass the Bun suite.
  */
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 const root = path.join(__dirname, '..');
@@ -35,5 +38,34 @@ describe('scripts/check.sh', () => {
         expect(covered, `${job}: ${run}`).toBe(true);
       }
     }
+  });
+
+  describe('agent image check', () => {
+    // A pnpm that passes at once stands in for the host steps, so only the image check runs for real.
+    let bin: string;
+    beforeAll(() => {
+      bin = fs.mkdtempSync(path.join(os.tmpdir(), 'check-sh-'));
+      fs.writeFileSync(path.join(bin, 'pnpm'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+    });
+    afterAll(() => fs.rmSync(bin, { recursive: true, force: true }));
+
+    const check = (runtime: string) =>
+      spawnSync('bash', [path.join(root, 'scripts', 'check.sh')], {
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, CONTAINER_RUNTIME: runtime },
+        encoding: 'utf8',
+      });
+
+    it('fails with a message when the image cannot be read (no runtime, runtime down, or no image)', () => {
+      const result = check('false');
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('cannot read the agent image');
+    });
+
+    it("fails with a message when the image's lock label is not the checkout's bun.lock", () => {
+      // `echo` as the runtime answers the label query with its own arguments, never the lock's hash.
+      const result = check('echo');
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain('was built from another container/agent-runner/bun.lock');
+    });
   });
 });
