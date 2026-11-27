@@ -8,11 +8,12 @@ import { defineConfig } from 'vitest/config';
 // Tests write under process.env.TEST_TMP; TMPDIR points os.tmpdir() there too, so every mkdtemp
 // lands in it. The prefix is short because tests put Unix sockets under os.tmpdir() (macOS: 104 bytes).
 // Removed when vitest exits, which also covers Ctrl-C and a run that matches no file, where vitest
-// skips its global teardown.
+// skips its global teardown. A watch-mode config reload makes a second root inside the first, and
+// the first one's removal may take it before its own hook runs: hence force.
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nct-'));
 process.env.TEST_TMP = root;
 process.env.TMPDIR = root;
-process.once('exit', () => fs.rmSync(root, { recursive: true }));
+process.once('exit', () => fs.rmSync(root, { recursive: true, force: true }));
 
 export default defineConfig({
   test: {
