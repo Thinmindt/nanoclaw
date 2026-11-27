@@ -8,6 +8,7 @@
  * `src/drivers/docker-driver.test.ts`, which is where argv now lives.
  */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -528,7 +529,7 @@ describe('gateway availability', () => {
 
 describe('syncSkillSymlinks', () => {
   function tmpClaudeDir(): string {
-    return fs.mkdtempSync(path.join(process.env.TEST_TMP!, 'ncl-skills-'));
+    return fs.mkdtempSync(path.join(os.tmpdir(), 'ncl-skills-'));
   }
 
   it('links every selected skill to its container path', () => {
@@ -566,7 +567,7 @@ describe('syncSkillSymlinks', () => {
 
   it('leaves a host directory alone when the skills dir is a symlink to it', () => {
     const dir = tmpClaudeDir();
-    const hostDir = fs.mkdtempSync(path.join(process.env.TEST_TMP!, 'ncl-host-'));
+    const hostDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ncl-host-'));
     fs.symlinkSync('/somewhere', path.join(hostDir, 'stale-link'));
     fs.symlinkSync(hostDir, path.join(dir, 'skills'));
 

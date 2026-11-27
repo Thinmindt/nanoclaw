@@ -7,6 +7,7 @@
  * fake is the external edge: a stand-in `onecli` binary.
  */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -55,7 +56,7 @@ let dir: string;
 
 beforeEach(async () => {
   for (const k of ENV_KEYS) saved[k] = process.env[k];
-  dir = fs.mkdtempSync(path.join(process.env.TEST_TMP!, 'calendar-scope-'));
+  dir = fs.mkdtempSync(path.join(os.tmpdir(), 'calendar-scope-'));
   const bin = path.join(dir, 'onecli');
   fs.writeFileSync(bin, `#!/bin/sh\ncat > "${dir}/stdin"\nprintf '{"id":"evt-1","summary":"Vet"}\\n200'\n`, {
     mode: 0o755,

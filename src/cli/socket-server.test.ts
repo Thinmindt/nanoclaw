@@ -1,5 +1,6 @@
 import fs from 'fs';
 import net from 'net';
+import os from 'os';
 import path from 'path';
 
 import { afterEach, describe, expect, it } from 'vitest';
@@ -8,7 +9,7 @@ import { startCliServer, stopCliServer } from './socket-server.js';
 
 // Unix socket paths have a small OS limit — keep them short.
 function tmpSocketPath(): string {
-  const dir = fs.mkdtempSync(path.join(process.env.TEST_TMP!, 'ncl-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ncl-'));
   return path.join(dir, 's.sock');
 }
 
