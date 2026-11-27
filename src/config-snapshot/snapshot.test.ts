@@ -43,7 +43,19 @@ const RULE = {
   requireApproval: false,
   conditions: null,
   identities: [{ type: 'agent', id: 'gw-1' }],
-  targets: [{ kind: 'network', hostPattern: 'example.org', pathPattern: '/docs/*', method: 'GET' }],
+  // The three target shapes gateway 1.42.0 returns: a plain host, a secret injection, a connection.
+  targets: [
+    { kind: 'network', hostPattern: 'example.org', pathPattern: '/docs/*', method: 'GET' },
+    {
+      kind: 'network',
+      hostPattern: 'api.example.org',
+      pathPattern: null,
+      method: null,
+      secretId: 'sec-1',
+      secretScope: null,
+    },
+    { kind: 'connection', connectionId: 'conn-1', tools: [] },
+  ],
   createdAt: '2026-11-01T00:00:00.000Z',
 };
 
@@ -51,7 +63,7 @@ let dir: string;
 let paths: SnapshotPaths;
 let server: http.Server;
 let requested: string[];
-let gateway: { agents: unknown[]; rules: unknown[] };
+let gateway: { agents: unknown[]; connections: unknown[]; rules: unknown[]; failing?: string };
 
 beforeEach(async () => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'config-snapshot-'));
@@ -76,7 +88,13 @@ beforeEach(async () => {
   `);
   raw.close();
 
-  const allowlist = { allowedRoots: [{ path: '/home/u/repos', allowReadWrite: false, description: 'mirrors' }] };
+  // The host reads `allowReadWrite`, else `readOnly` (what /manage-mounts writes), else read-only.
+  const allowlist = {
+    allowedRoots: [
+      { path: '/home/u/repos', allowReadWrite: false, description: 'mirrors' },
+      { path: '/home/u/scratch', readOnly: false },
+    ],
+  };
   fs.writeFileSync(path.join(dir, 'mount-allowlist.json'), JSON.stringify({ ...allowlist, blockedPatterns: [] }));
   fs.writeFileSync(path.join(dir, 'versions.json'), JSON.stringify({ 'onecli-gateway': '1.42.0' }));
   fs.writeFileSync(
@@ -84,18 +102,19 @@ beforeEach(async () => {
     'ONECLI_API_KEY=planted-gateway-key\nCALENDAR_TOOL_AGENT_GROUPS=ag-pm\nGITHUB_STATUS_AGENT_GROUPS=ag-pm, ag-arch\n',
   );
 
-  gateway = { agents: [AGENT], rules: [RULE] };
+  gateway = { agents: [AGENT], connections: [{ appConnectionId: 'conn-1', sessionPolicy: {} }], rules: [RULE] };
   requested = [];
   const routes: Record<string, () => unknown> = {
     '/v1/agents': () => gateway.agents,
     '/v1/agents/gw-1/secrets': () => ['sec-1'],
-    '/v1/agents/gw-1/connections': () => [{ appConnectionId: 'conn-1', sessionPolicy: {} }],
+    '/v1/agents/gw-1/connections': () => gateway.connections,
     '/v1/policy/rules?status=published': () => gateway.rules,
   };
   server = http.createServer((req, res) => {
     requested.push(`${req.method} ${req.url}`);
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify(routes[req.url!]()));
+    if (req.url === gateway.failing) res.statusCode = 500;
+    res.end(JSON.stringify(req.url === gateway.failing ? { error: 'boom' } : routes[req.url!]()));
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
 
@@ -154,12 +173,15 @@ describe('writeSnapshot', () => {
           additional_mounts: [{ hostPath: '/home/u/workbench', containerPath: 'workbench', readonly: false }],
         },
       ],
-      mountAllowlistRoots: [{ path: '/home/u/repos', allowReadWrite: false }],
+      mountAllowlistRoots: [
+        { path: '/home/u/repos', allowReadWrite: false },
+        { path: '/home/u/scratch', allowReadWrite: true },
+      ],
       envFlags: { CALENDAR_TOOL_AGENT_GROUPS: 'ag-pm', GITHUB_STATUS_AGENT_GROUPS: 'ag-pm, ag-arch' },
       gatewayAgents: [{ id: 'gw-1', identifier: 'pm', name: 'PM', secretIds: ['sec-1'], connectionIds: ['conn-1'] }],
       gatewayRules: [RULE],
     });
-    // Only the gateway's agent and rule lists are read: no secrets endpoint.
+    // The agent list, each agent's secret and connection ids, the published rules; no secrets or connections list.
     expect(requested.sort()).toEqual([
       'GET /v1/agents',
       'GET /v1/agents/gw-1/connections',
@@ -181,6 +203,15 @@ describe('writeSnapshot', () => {
     expect(fs.readFileSync(latest, 'utf-8')).not.toBe(old);
   });
 
+  it('opens the database read-only, so a missing one is not created', async () => {
+    const missing = path.join(dir, 'missing.db');
+
+    await expect(writeSnapshot({ ...paths, dbPath: missing }, NOW)).rejects.toThrow();
+
+    expect(fs.existsSync(missing)).toBe(false);
+    expect(fs.readdirSync(paths.outDir)).toEqual([]);
+  });
+
   it.each([
     ['an unknown key', () => (gateway.rules = [{ ...RULE, planted: 'x' }]), 'unknown key gatewayRules[].planted'],
     [
@@ -188,7 +219,17 @@ describe('writeSnapshot', () => {
       () => (gateway.agents = [{ ...AGENT, name: TOKEN_SHAPED }]),
       'credential-shaped value at gatewayAgents[].name',
     ],
-  ])('refuses a snapshot with %s and leaves the last good copy', async (_case, plant, problem) => {
+    [
+      'a field the gateway no longer returns',
+      () => (gateway.connections = [{ id: 'conn-1' }]),
+      'missing field appConnectionId',
+    ],
+    [
+      'a gateway error',
+      () => (gateway.failing = '/v1/policy/rules?status=published'),
+      '/v1/policy/rules?status=published → HTTP 500',
+    ],
+  ])('fails on %s and leaves the last good copy', async (_case, plant, problem) => {
     await writeSnapshot(paths, NOW);
     const good = fs.readFileSync(path.join(paths.outDir, 'latest.json'), 'utf-8');
 

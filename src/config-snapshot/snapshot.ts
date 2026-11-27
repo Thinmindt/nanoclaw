@@ -156,19 +156,34 @@ function readDb(dbPath: string): Row {
 }
 
 async function getJson<T>(url: string): Promise<T> {
-  return (await fetch(url)).json() as Promise<T>;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`GET ${url} → HTTP ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
+/** A field picked by name; one the source stopped returning refuses the snapshot instead of going missing. */
+function field(row: Row, key: string): unknown {
+  if (row[key] === undefined) throw new Error(`snapshot refused, nothing written: missing field ${key}`);
+  return row[key];
+}
+
+/** The host's rule for a root (normalizeRoot, src/modules/mount-security/index.ts): allowReadWrite, else !readOnly, else read-only. */
+function allowsReadWrite(root: Row): boolean {
+  if (typeof root.allowReadWrite === 'boolean') return root.allowReadWrite;
+  if (typeof root.readOnly === 'boolean') return !root.readOnly;
+  return false;
 }
 
 async function readGateway(gatewayUrl: string): Promise<Row> {
   const agents = await getJson<Row[]>(`${gatewayUrl}/v1/agents`);
   const gatewayAgents = await Promise.all(
     agents.map(async (a) => ({
-      id: a.id,
-      identifier: a.identifier,
-      name: a.name,
+      id: field(a, 'id'),
+      identifier: field(a, 'identifier'),
+      name: field(a, 'name'),
       secretIds: await getJson(`${gatewayUrl}/v1/agents/${a.id}/secrets`),
-      connectionIds: (await getJson<Row[]>(`${gatewayUrl}/v1/agents/${a.id}/connections`)).map(
-        (c) => c.appConnectionId,
+      connectionIds: (await getJson<Row[]>(`${gatewayUrl}/v1/agents/${a.id}/connections`)).map((c) =>
+        field(c, 'appConnectionId'),
       ),
     })),
   );
@@ -191,7 +206,10 @@ export async function writeSnapshot(paths: SnapshotPaths, now: Date): Promise<st
   const allowlist = JSON.parse(fs.readFileSync(paths.allowlistPath, 'utf-8')) as { allowedRoots: Row[] };
   const body = {
     ...readDb(paths.dbPath),
-    mountAllowlistRoots: allowlist.allowedRoots.map((r) => ({ path: r.path, allowReadWrite: r.allowReadWrite })),
+    mountAllowlistRoots: allowlist.allowedRoots.map((r) => ({
+      path: field(r, 'path'),
+      allowReadWrite: allowsReadWrite(r),
+    })),
     envFlags: readEnvFile(ENV_FLAGS, paths.projectRoot),
     ...(await readGateway(paths.gatewayUrl)),
   };

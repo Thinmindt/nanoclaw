@@ -12,21 +12,24 @@ agent already reads.
 
 - **What it holds:** the agent groups; agent-to-agent policies (from, to, approver); every wiring
   with all its columns; each messaging group's `unknown_sender_policy`; destinations; each group's
-  additional mounts and `cli_scope`; the mount allowlist's roots with their read-write flag; the env
+  additional mounts and `cli_scope`; the mount allowlist's roots with their read-write flag, decided
+  the way the host decides it (`allowReadWrite`, else not `readOnly`, else read-only); the env
   flags that decide which groups may use a host tool (`CALENDAR_TOOL_AGENT_GROUPS`,
   `GITHUB_STATUS_AGENT_GROUPS`, `PLAYGROUND_AGENT_GROUPS`, each a list of group ids); the gateway's
   agents (id, identifier, name, and the ids of the secrets and connections each holds);
   and the gateway's published rules exactly as its list endpoint returns them.
-- **What it reads:** the central DB, opened read-only; the mount allowlist; the gateway's agent and
-  rule list endpoints; the add-onecli skill's `versions.json` for the gateway pin; and from the env
-  file only those three flags, through `readEnvFile`, which returns just the keys asked for, so the
-  gateway key it also holds is never read into the script. Never a secrets endpoint, never
+- **What it reads:** the central DB, opened read-only; the mount allowlist; the gateway's agent
+  list, each agent's secret and connection ids, and its published rule list; the add-onecli skill's
+  `versions.json` for the gateway pin; and the env file through `readEnvFile`, which parses the whole
+  file but returns only those three flags, so the gateway key it also holds is never returned to,
+  kept or written by the script. Never the gateway's secrets or connections lists, never
   `container_configs.mcp_servers` (its headers are free-form). Secret and connection names live
-  only in the gateway's secrets and connections lists, so the snapshot carries their ids.
+  only in those lists, so the snapshot carries ids.
 - **The check, on every write:** every key must be on the allow-list in `snapshot.ts`
   (`ALLOWED_KEYS`), and no value may match the repo's credential detector (`looksLikeCredential`,
   `src/drivers/types.ts`). Either failure refuses the whole snapshot and writes nothing; the error
-  names the key path, never the value.
+  names the key path, never the value. A field picked by name that its source no longer returns, or
+  a gateway answer other than 2xx, fails the run the same way.
 - **The files:** `<out>/<UTC date>.json` and `<out>/latest.json`, each written to a temporary file
   and renamed into place, so a refused or failed run leaves the last good copy. The first line
   carries the write time and the gateway pin: `{"written":"<ISO time>","gatewayPin":"1.42.0",`.
@@ -106,6 +109,10 @@ systemctl --user edit nanoclaw-config-snapshot.timer
   version returns a new field. Look at what the field holds; if it is safe for the reading agent,
   add its path to `ALLOWED_KEYS` in both `resources/snapshot.ts` and `src/config-snapshot/snapshot.ts`,
   then build. Moving the gateway past the pinned version is the likeliest cause.
+- **"missing field …":** a gateway past the pinned version, or a changed allowlist format, no longer
+  returns a field the snapshot picks by name. Read the new shape and update the pick in both copies.
+- **"GET … → HTTP <status>":** the gateway refused or failed that call. Check the gateway is up
+  (`docker ps`) and reachable at the URL in the service unit; nothing here needs changing.
 - **"credential-shaped value at …":** a value at that path looks like a token. Find and remove it at
   its source; do not widen the check.
 - **`systemctl --user` fails with "Failed to connect to bus":** the shell has no user session. Log in
