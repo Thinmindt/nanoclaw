@@ -6,13 +6,17 @@ import { defineConfig } from 'vitest/config';
 
 // One temp root per run, so two suites running at once (two worktrees) never share a folder.
 // Tests write under process.env.TEST_TMP; TMPDIR points os.tmpdir() there too, so every mkdtemp
-// lands in it. src/test-global-setup.ts removes the root afterwards.
-process.env.TEST_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'nanoclaw-test-run-'));
-process.env.TMPDIR = process.env.TEST_TMP;
+// lands in it. The prefix is short because tests put Unix sockets under os.tmpdir() (macOS: 104 bytes).
+// Removed when vitest exits, which also covers Ctrl-C and a run that matches no file, where vitest
+// skips its global teardown. A watch-mode config reload nests a second root inside the first, which
+// may be gone by the time the second is removed: hence force.
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nct-'));
+process.env.TEST_TMP = root;
+process.env.TMPDIR = root;
+process.once('exit', () => fs.rmSync(root, { recursive: true, force: true }));
 
 export default defineConfig({
   test: {
-    globalSetup: ['src/test-global-setup.ts'],
     setupFiles: ['src/test-setup.ts'],
     // container/agent-runner tests run under Bun (they depend on bun:sqlite).
     // See container/agent-runner/package.json "test" script.
