@@ -114,6 +114,7 @@ export const ALLOWED_KEYS = new Set([
     'targets[].secretId',
     'targets[].secretScope',
     'targets[].connectionId',
+    'targets[].tools',
     'createdAt',
   ].map((key) => `gatewayRules[].${key}`),
 ]);
