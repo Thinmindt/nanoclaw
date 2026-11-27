@@ -71,17 +71,7 @@ Both paths end with Bun running the same source file from `/app/src/index.ts`.
 
 ## CI shape
 
-`.github/workflows/ci.yml` installs both Node (with pnpm cache) and Bun, then runs in order:
-
-1. `pnpm install --frozen-lockfile` (host)
-2. `bun install --frozen-lockfile` in `container/agent-runner/` (container)
-3. `pnpm run format:check`
-4. `pnpm exec tsc --noEmit` (host typecheck)
-5. `pnpm exec tsc -p container/agent-runner/tsconfig.json --noEmit` (container typecheck)
-6. `pnpm exec vitest run` (host tests)
-7. `bun test` in `container/agent-runner/` (container tests)
-
-Any failure fails the PR.
+`.github/workflows/ci.yml` installs both Node and Bun and runs the host and container checks; any failure fails the PR. Its local counterpart is the local bar in [CONTRIBUTING.md](../CONTRIBUTING.md#pr-body-shape).
 
 ## Key invariants
 
