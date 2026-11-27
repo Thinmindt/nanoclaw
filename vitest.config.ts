@@ -1,7 +1,16 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
 import { defineConfig } from 'vitest/config';
+
+// One temp root per run, so two suites running at once (two worktrees) never share a folder.
+// Tests write under process.env.TEST_TMP; src/test-global-setup.ts removes the root afterwards.
+process.env.TEST_TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'nanoclaw-test-run-'));
 
 export default defineConfig({
   test: {
+    globalSetup: ['src/test-global-setup.ts'],
     setupFiles: ['src/test-setup.ts'],
     // container/agent-runner tests run under Bun (they depend on bun:sqlite).
     // See container/agent-runner/package.json "test" script.
