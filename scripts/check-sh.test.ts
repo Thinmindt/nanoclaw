@@ -66,6 +66,25 @@ describe('scripts/check.sh', () => {
       const result = check('echo');
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain('was built from another container/agent-runner/bun.lock');
+      // The way out is this checkout's own image, never a rebuild of another install's from here.
+      expect(result.stderr).toContain('NANOCLAW_PROJECT_ROOT unset');
+    });
+
+    it("fails with a message when the image's runner package.json is not the checkout's", () => {
+      // A runtime whose image carries the checkout's lock label but another package.json, as when a
+      // dependency changes in package.json and not in bun.lock (CI's frozen bun install fails there).
+      const runtime = path.join(bin, 'runtime');
+      fs.writeFileSync(
+        runtime,
+        '#!/bin/sh\ncase "$1" in\n' +
+          "  image) shasum -a 256 container/agent-runner/bun.lock | cut -d' ' -f1 ;;\n" +
+          "  run) echo '{}' ;;\n" +
+          'esac\n',
+        { mode: 0o755 },
+      );
+      const result = check(runtime);
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain("container/agent-runner/package.json is not the image's");
     });
   });
 });
