@@ -17,7 +17,7 @@ const read = (file: string) => fs.readFileSync(path.join(root, file), 'utf8');
 
 // CI steps that check.sh runs in another form.
 const LOCAL_FORM: Record<string, string> = {
-  // The image's baked node_modules stand in, checked against the lock label build.sh writes.
+  // The image's baked node_modules stand in, checked against the lock label build.sh writes and the image's package.json.
   'bun install --frozen-lockfile': 'dev.nanoclaw.agent-runner-lock-sha256',
   // The same typecheck, inside the agent image.
   'pnpm exec tsc -p container/agent-runner/tsconfig.json --noEmit': 'node_modules/.bin/tsc -p tsconfig.json --noEmit',
@@ -85,6 +85,8 @@ describe('scripts/check.sh', () => {
       const result = check(runtime);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("container/agent-runner/package.json is not the image's");
+      // A bare build.sh on a pulled-image install only layers tools on the same image; `build` rebuilds it.
+      expect(result.stderr).toContain('container/build.sh build');
     });
   });
 });
