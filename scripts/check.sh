@@ -39,18 +39,17 @@ image="$(container_image_base):latest"
 # and package.json (CI's frozen install fails when the two disagree). A stale
 # image passing the Bun suite would be a false green.
 echo "== Agent image $image"
-own_image="Build this checkout's own image (container/build.sh build, NANOCLAW_PROJECT_ROOT unset) and rerun without NANOCLAW_PROJECT_ROOT."
 lock="$(shasum -a 256 container/agent-runner/bun.lock | cut -d' ' -f1)"
 label="$("$runtime" image inspect --format '{{index .Config.Labels "dev.nanoclaw.agent-runner-lock-sha256"}}' "$image")" || {
   echo "check.sh: cannot read the agent image $image: $runtime is missing or not running, or the image is not built (container/build.sh), or NANOCLAW_PROJECT_ROOT should name the install whose image to use." >&2
   exit 1
 }
 if [ "$label" != "$lock" ]; then
-  echo "check.sh: $image was built from another container/agent-runner/bun.lock (image: $label, checkout: $lock). $own_image" >&2
+  echo "check.sh: $image was built from another container/agent-runner/bun.lock (image: $label, checkout: $lock). Build this checkout's own image (container/build.sh, NANOCLAW_PROJECT_ROOT unset; an install that pulls its image is offered pull or build) and rerun without NANOCLAW_PROJECT_ROOT." >&2
   exit 1
 fi
 "$runtime" run --rm --entrypoint cat "$image" /app/package.json | cmp -s - container/agent-runner/package.json || {
-  echo "check.sh: container/agent-runner/package.json is not the image's. $own_image" >&2
+  echo "check.sh: container/agent-runner/package.json is not the image's. Build this checkout's own image (container/build.sh build, NANOCLAW_PROJECT_ROOT unset) and rerun without NANOCLAW_PROJECT_ROOT." >&2
   exit 1
 }
 
