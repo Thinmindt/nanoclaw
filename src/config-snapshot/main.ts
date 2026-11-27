@@ -16,6 +16,7 @@ const dated = await writeSnapshot(
     allowlistPath: path.join(os.homedir(), '.config', 'nanoclaw', 'mount-allowlist.json'),
     gatewayUrl,
     pinPath: path.resolve('.claude', 'skills', 'add-onecli', 'versions.json'),
+    projectRoot: path.resolve('.'),
     outDir,
   },
   new Date(),

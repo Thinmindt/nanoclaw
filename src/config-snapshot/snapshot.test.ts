@@ -79,6 +79,10 @@ beforeEach(async () => {
   const allowlist = { allowedRoots: [{ path: '/home/u/repos', allowReadWrite: false, description: 'mirrors' }] };
   fs.writeFileSync(path.join(dir, 'mount-allowlist.json'), JSON.stringify({ ...allowlist, blockedPatterns: [] }));
   fs.writeFileSync(path.join(dir, 'versions.json'), JSON.stringify({ 'onecli-gateway': '1.42.0' }));
+  fs.writeFileSync(
+    path.join(dir, '.env'),
+    'ONECLI_API_KEY=planted-gateway-key\nCALENDAR_TOOL_AGENT_GROUPS=ag-pm\nGITHUB_STATUS_AGENT_GROUPS=ag-pm, ag-arch\n',
+  );
 
   gateway = { agents: [AGENT], rules: [RULE] };
   requested = [];
@@ -100,6 +104,7 @@ beforeEach(async () => {
     allowlistPath: path.join(dir, 'mount-allowlist.json'),
     gatewayUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
     pinPath: path.join(dir, 'versions.json'),
+    projectRoot: dir,
     outDir: out,
   };
 });
@@ -150,6 +155,7 @@ describe('writeSnapshot', () => {
         },
       ],
       mountAllowlistRoots: [{ path: '/home/u/repos', allowReadWrite: false }],
+      envFlags: { CALENDAR_TOOL_AGENT_GROUPS: 'ag-pm', GITHUB_STATUS_AGENT_GROUPS: 'ag-pm, ag-arch' },
       gatewayAgents: [{ id: 'gw-1', identifier: 'pm', name: 'PM', secretIds: ['sec-1'], connectionIds: ['conn-1'] }],
       gatewayRules: [RULE],
     });

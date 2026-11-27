@@ -12,13 +12,17 @@ agent already reads.
 
 - **What it holds:** the agent groups; agent-to-agent policies (from, to, approver); every wiring
   with all its columns; each messaging group's `unknown_sender_policy`; destinations; each group's
-  additional mounts and `cli_scope`; the mount allowlist's roots with their read-write flag; the
-  gateway's agents (id, identifier, name, and the ids of the secrets and connections each holds);
+  additional mounts and `cli_scope`; the mount allowlist's roots with their read-write flag; the env
+  flags that decide which groups may use a host tool (`CALENDAR_TOOL_AGENT_GROUPS`,
+  `GITHUB_STATUS_AGENT_GROUPS`, `PLAYGROUND_AGENT_GROUPS`, each a list of group ids); the gateway's
+  agents (id, identifier, name, and the ids of the secrets and connections each holds);
   and the gateway's published rules exactly as its list endpoint returns them.
 - **What it reads:** the central DB, opened read-only; the mount allowlist; the gateway's agent and
-  rule list endpoints; the add-onecli skill's `versions.json` for the gateway pin. Never the env
-  file (it holds the gateway key), never a secrets endpoint, never `container_configs.mcp_servers`
-  (its headers are free-form).
+  rule list endpoints; the add-onecli skill's `versions.json` for the gateway pin; and from the env
+  file only those three flags, through `readEnvFile`, which returns just the keys asked for, so the
+  gateway key it also holds is never read into the script. Never a secrets endpoint, never
+  `container_configs.mcp_servers` (its headers are free-form). Secret and connection names live
+  only in the gateway's secrets and connections lists, so the snapshot carries their ids.
 - **The check, on every write:** every key must be on the allow-list in `snapshot.ts`
   (`ALLOWED_KEYS`), and no value may match the repo's credential detector (`looksLikeCredential`,
   `src/drivers/types.ts`). Either failure refuses the whole snapshot and writes nothing; the error
@@ -53,7 +57,7 @@ pnpm run build
 ```
 
 - `snapshot.test.ts` drives the real script against a migrated scratch DB and a stand-in gateway: a
-  full write, the rename, and a refusal for a planted unknown key and for a credential-shaped value.
+  full write (an env file with a planted gateway key that must not appear), the rename, and a refusal for a planted unknown key and for a credential-shaped value.
 - `skill-sync.test.ts` fails if a file in `src/config-snapshot/` and its copy in `resources/` differ.
   `resources/` is the canonical copy.
 

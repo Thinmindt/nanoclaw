@@ -2,9 +2,10 @@
  * A read-only, secret-free snapshot of the live config that decides who can reach whom, written for
  * the Project Manager to read (the `add-config-snapshot` skill).
  *
- * Inputs: the central DB opened read-only, the mount allowlist, and the gateway's agent and rule
- * lists. Never the env file (it holds the gateway key) and never a secrets endpoint. This module
- * imports nothing that reads the env file; `src/config.ts` does, so its paths are not used here.
+ * Inputs: the central DB opened read-only, the mount allowlist, the gateway's agent and rule lists,
+ * and from the env file only the access flags in `ENV_FLAGS`, through `readEnvFile`, which returns
+ * just the keys asked for; the gateway key is never asked for. Never a secrets endpoint.
+ * `src/config.ts` reads every key it knows from the env file, so its paths are not used here.
  *
  * `checkSnapshot` decides whether a snapshot may be written; `writeSnapshot` writes only after it
  * passes, so a refused or failed run leaves the last good copy in place.
@@ -15,8 +16,12 @@ import path from 'path';
 import Database from 'better-sqlite3';
 
 import { looksLikeCredential } from '../drivers/types.js';
+import { readEnvFile } from '../env.js';
 
 type Row = Record<string, unknown>;
+
+/** The env flags that decide which agent groups may use a host tool: lists of group ids. */
+const ENV_FLAGS = ['CALENDAR_TOOL_AGENT_GROUPS', 'GITHUB_STATUS_AGENT_GROUPS', 'PLAYGROUND_AGENT_GROUPS'];
 
 const QUERIES = {
   agentGroups: 'SELECT id, name, folder FROM agent_groups ORDER BY id',
@@ -78,6 +83,8 @@ export const ALLOWED_KEYS = new Set([
   'mountAllowlistRoots',
   'mountAllowlistRoots[].path',
   'mountAllowlistRoots[].allowReadWrite',
+  'envFlags',
+  ...ENV_FLAGS.map((flag) => `envFlags.${flag}`),
   'gatewayAgents',
   'gatewayAgents[].id',
   'gatewayAgents[].identifier',
@@ -174,6 +181,8 @@ export interface SnapshotPaths {
   gatewayUrl: string;
   /** The add-onecli skill's versions.json, which pins the gateway version. */
   pinPath: string;
+  /** The folder holding the env file. */
+  projectRoot: string;
   outDir: string;
 }
 
@@ -183,6 +192,7 @@ export async function writeSnapshot(paths: SnapshotPaths, now: Date): Promise<st
   const body = {
     ...readDb(paths.dbPath),
     mountAllowlistRoots: allowlist.allowedRoots.map((r) => ({ path: r.path, allowReadWrite: r.allowReadWrite })),
+    envFlags: readEnvFile(ENV_FLAGS, paths.projectRoot),
     ...(await readGateway(paths.gatewayUrl)),
   };
   const pin = JSON.parse(fs.readFileSync(paths.pinPath, 'utf-8'))['onecli-gateway'];
