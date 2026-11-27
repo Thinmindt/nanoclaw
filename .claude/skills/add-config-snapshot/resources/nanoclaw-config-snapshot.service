@@ -1,0 +1,11 @@
+[Unit]
+Description=Write a secret-free snapshot of the live NanoClaw config for the Project Manager
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/nanoclaw
+# The user manager's default PATH can leave out a per-user Node install.
+Environment=PATH=%h/.local/bin:%h/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env node dist/config-snapshot/main.js http://172.17.0.1:10254 %h/exports/nanoclaw-config
+Nice=10
+TimeoutStartSec=5min

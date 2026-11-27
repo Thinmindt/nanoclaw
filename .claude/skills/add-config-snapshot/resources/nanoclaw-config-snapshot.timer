@@ -1,0 +1,12 @@
+[Unit]
+Description=Snapshot the live NanoClaw config every hour, on the mirror-refresh schedule
+
+[Timer]
+# The mirror refresh's schedule (nanoclaw-mirror-refresh.timer). A timer of its own: the refresh exits
+# non-zero on a secret-scan hit, which would also stop a snapshot chained after it.
+OnCalendar=*-*-* *:40:00
+# Run once at start-up if the machine was off or asleep at a scheduled time.
+Persistent=true
+
+[Install]
+WantedBy=timers.target
