@@ -2,9 +2,11 @@
  * A read-only, secret-free snapshot of the live config that decides who can reach whom, written for
  * the Project Manager to read (the `add-config-snapshot` skill).
  *
- * Inputs: the central DB opened read-only, the mount allowlist, the gateway's agent and rule lists,
- * and from the env file only the access flags in `ENV_FLAGS`, through `readEnvFile`, which returns
- * just the keys asked for; the gateway key is never asked for. Never a secrets endpoint.
+ * Inputs: the central DB opened read-only, the mount allowlist, the gateway's agent list with each
+ * agent's secret and connection ids (`/v1/agents/<id>/secrets` and `/connections`), its published
+ * rule list, and from the env file only the access flags in `ENV_FLAGS`, through `readEnvFile`,
+ * which returns just the keys asked for; the gateway key is never asked for. Never the gateway's
+ * secrets or connections lists.
  * `src/config.ts` reads every key it knows from the env file, so its paths are not used here.
  *
  * `checkSnapshot` decides whether a snapshot may be written; `writeSnapshot` writes only after it
