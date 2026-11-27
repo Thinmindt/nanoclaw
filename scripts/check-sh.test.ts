@@ -68,8 +68,10 @@ describe('scripts/check.sh', () => {
       expect(result.stderr).toContain('was built from another container/agent-runner/bun.lock');
       // The way out is this checkout's own image, never a rebuild of another install's from here.
       expect(result.stderr).toContain('NANOCLAW_PROJECT_ROOT unset');
-      // A bare build.sh, which on a pulled-image install offers `pull` before `build`.
-      expect(result.stderr).toContain('(container/build.sh,');
+      // `build` is the step that clears it: on a pulled-image install, `pull` tags a drifted image anyway.
+      // It also moves such an install to local builds, which the message says.
+      expect(result.stderr).toContain('container/build.sh build');
+      expect(result.stderr).toContain('switches it to local builds');
     });
 
     it("fails with a message when the image's runner package.json is not the checkout's", () => {

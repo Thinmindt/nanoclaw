@@ -229,9 +229,9 @@ This applies to humans and coding agents alike:
   in one line why none does (docs-only, config-only, unreachable in CI).
 - The local bar is `bash scripts/check.sh`: CI's test and skill-pins jobs in
   one command, stopping at the first failure. It needs Docker and an agent
-  image built from the checkout's `bun.lock`, runs on one local Node where CI
-  runs a version matrix, and lists in its header what it cannot run and why.
-  Its green run is the first receipt.
+  image built from this checkout's agent runner (its `bun.lock` and
+  `package.json`), and lists in its header what it cannot run and why. Its
+  green run is the first receipt.
 
 One pair, same facts, the shape is the difference.
 
