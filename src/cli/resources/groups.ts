@@ -236,7 +236,7 @@ registerResource({
       access: 'approval',
       description:
         'Delete an agent group and its dependent rows (sessions, destinations, approvals, role grants, ' +
-        'memberships, channel wirings). FK-ordered cascade in a single transaction. ' +
+        'memberships, channel wirings, message policies). FK-ordered cascade in a single transaction. ' +
         "Use --id <group-id>. The host sweep stops the group's running containers within about a minute. " +
         'Out of scope: on-disk cleanup of groups/<folder>/ and data/v2-sessions/<group-id>/. ' +
         'The leftover groups/<folder>/ blocks re-creating a group under the same folder name until it is moved or removed.',
@@ -265,6 +265,7 @@ registerResource({
             pending_approvals: 0,
             agent_destinations_owned: 0,
             agent_destinations_pointing: 0,
+            agent_message_policies: 0,
             pending_sender_approvals: 0,
             pending_channel_approvals: 0,
             messaging_group_agents: 0,
@@ -314,6 +315,14 @@ registerResource({
           // the explicit delete here mirrors the other tables and surfaces the count.
           counts.container_configs = (
             await db.run('DELETE FROM container_configs WHERE agent_group_id = ?', id)
+          ).changes;
+          // Both columns reference agent_groups(id) with no delete rule (migration 017).
+          counts.agent_message_policies = (
+            await db.run(
+              'DELETE FROM agent_message_policies WHERE from_agent_group_id = ? OR to_agent_group_id = ?',
+              id,
+              id,
+            )
           ).changes;
           await db.run('DELETE FROM agent_groups WHERE id = ?', id);
           return counts;

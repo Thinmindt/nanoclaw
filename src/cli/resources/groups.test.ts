@@ -289,6 +289,49 @@ describe('groups CLI delete cascades dependent rows (#2525)', () => {
     expect(await count('SELECT COUNT(*) AS c FROM agent_destinations WHERE agent_group_id = ?', B)).toBe(0);
   });
 
+  it('removes the message policies on both sides of the deleted group (regression: FOREIGN KEY constraint failed)', async () => {
+    const db = getDb();
+    // Two held lines, each a destination plus a policy, and a third pair as the control.
+    const pairs = [
+      ['ag-src-1', 'ag-dst-1'],
+      ['ag-src-2', 'ag-dst-2'],
+      ['ag-ctl-from', 'ag-ctl-to'],
+    ];
+    for (const [from, to] of pairs) {
+      for (const id of [from, to]) {
+        await createAgentGroup({ id, name: id, folder: id, agent_provider: null, created_at: now() });
+      }
+      await db.run(
+        `INSERT INTO agent_destinations (agent_group_id, local_name, target_type, target_id, created_at)
+         VALUES (?, 'peer', 'agent', ?, ?)`,
+        from,
+        to,
+        now(),
+      );
+      await db.run(
+        `INSERT INTO agent_message_policies (from_agent_group_id, to_agent_group_id, approver, created_at)
+         VALUES (?, ?, 'owner', ?)`,
+        from,
+        to,
+        now(),
+      );
+    }
+
+    async function deleteGroup(id: string): Promise<Record<string, number>> {
+      const resp = await dispatch({ id: `req-del-${id}`, command: 'groups-delete', args: { id } }, { caller: 'host' });
+      expect(errorMessage(resp)).toBeUndefined();
+      return (resp as { ok: true; data: { removed: Record<string, number> } }).data.removed;
+    }
+
+    // The target of the first line, then the source of the second.
+    expect((await deleteGroup('ag-dst-1')).agent_message_policies).toBe(1);
+    expect((await deleteGroup('ag-src-2')).agent_message_policies).toBe(1);
+
+    expect(
+      await db.all('SELECT from_agent_group_id AS from_id, to_agent_group_id AS to_id FROM agent_message_policies'),
+    ).toEqual([{ from_id: 'ag-ctl-from', to_id: 'ag-ctl-to' }]);
+  });
+
   it('returns a handler error for an unknown group id', async () => {
     const resp = await dispatch(
       { id: 'req-missing', command: 'groups-delete', args: { id: 'ag-does-not-exist' } },
