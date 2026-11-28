@@ -1,0 +1,9 @@
+[Unit]
+Description=Write a secret-free snapshot of the live NanoClaw config for the Project Manager
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/nanoclaw
+ExecStart=/usr/bin/node dist/config-snapshot/main.js http://172.17.0.1:10254 %h/exports/nanoclaw-config
+Nice=10
+TimeoutStartSec=5min
