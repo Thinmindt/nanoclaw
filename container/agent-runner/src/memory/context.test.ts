@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import { MEMORY_FILE_BUDGET_CHARS, MEMORY_TRUNCATION_NOTICE, renderMemorySection } from './context.js';
 
-const BASE = '/tmp/nanoclaw-memory-context-test';
+const BASE = fs.mkdtempSync(path.join(os.tmpdir(), 'nanoclaw-memory-context-test-'));
 
 function writeMemoryTree(index: string, definition: string): void {
   fs.mkdirSync(path.join(BASE, 'memory', 'system'), { recursive: true });

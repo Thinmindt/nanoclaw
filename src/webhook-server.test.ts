@@ -6,15 +6,23 @@
  * registers its own Chat under its own URL while dispatching to the same
  * SDK adapter name. The 2-arg default keeps the historical single-instance
  * route byte-identical. Conventions follow PR #2617: real HTTP server on a
- * fixed WEBHOOK_PORT, real fetch.
+ * WEBHOOK_PORT, real fetch. The port is a free one, so two suites running at
+ * once do not answer each other's requests.
  */
+import net from 'node:net';
+
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import type { Chat } from 'chat';
 
 import { getWebhookStatus, registerWebhookAdapter, stopWebhookServer } from './webhook-server.js';
 
-const PORT = 3917;
+const PORT = await new Promise<number>((resolve) => {
+  const probe = net.createServer().listen(0, '0.0.0.0', () => {
+    const { port } = probe.address() as net.AddressInfo;
+    probe.close(() => resolve(port));
+  });
+});
 const BASE = `http://127.0.0.1:${PORT}`;
 
 /** Minimal Chat stand-in: only `webhooks` is touched by the server. */

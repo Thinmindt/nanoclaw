@@ -32,10 +32,10 @@ vi.mock('../../container-runner.js', () => ({
 
 vi.mock('../../config.js', async () => {
   const actual = await vi.importActual('../../config.js');
-  return { ...actual, DATA_DIR: '/tmp/nanoclaw-test-scout-gate' };
+  return { ...actual, DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-test-scout-gate` };
 });
 
-const TEST_DIR = '/tmp/nanoclaw-test-scout-gate';
+const TEST_DIR = `${process.env.TEST_TMP}/nanoclaw-test-scout-gate`;
 const GATE_DIR = path.join(TEST_DIR, 'a2a-gate');
 const ARCHITECT = 'ag-architect';
 const SCOUT = 'ag-scout';

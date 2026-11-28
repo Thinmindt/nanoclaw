@@ -11,7 +11,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 
 import { ensureSchema, getInboundSourceSessionId, migrateMessagesInTable, syncProcessingAcks } from './session-db.js';
 
-const TEST_DIR = '/tmp/nanoclaw-session-db-test';
+const TEST_DIR = `${process.env.TEST_TMP}/nanoclaw-session-db-test`;
 const DB_PATH = path.join(TEST_DIR, 'inbound.db');
 
 afterEach(() => {

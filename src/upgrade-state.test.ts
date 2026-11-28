@@ -5,10 +5,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('./config.js', async () => {
   const actual = await vi.importActual<typeof import('./config.js')>('./config.js');
-  return { ...actual, DATA_DIR: '/tmp/nanoclaw-test-upgrade-state' };
+  return { ...actual, DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-test-upgrade-state` };
 });
 
-const TEST_DIR = '/tmp/nanoclaw-test-upgrade-state';
+const TEST_DIR = `${process.env.TEST_TMP}/nanoclaw-test-upgrade-state`;
 
 import {
   currentUpgradeState,
@@ -56,7 +56,7 @@ describe('upgrade-state', () => {
   });
 
   it('can stamp and validate a recovery marker when Git is unavailable', () => {
-    const projectRoot = fs.mkdtempSync('/tmp/nanoclaw-no-git-');
+    const projectRoot = fs.mkdtempSync(`${process.env.TEST_TMP}/nanoclaw-no-git-`);
     fs.writeFileSync(path.join(projectRoot, 'package.json'), JSON.stringify({ version: '1.2.3' }));
     try {
       expect(getCodeIdentity(projectRoot)).toEqual({ version: '1.2.3', commit: 'unknown', tree: 'unknown' });

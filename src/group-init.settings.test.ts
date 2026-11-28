@@ -2,12 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const TEST_ROOT = '/tmp/nanoclaw-group-init-settings-test';
+const TEST_ROOT = `${process.env.TEST_TMP}/nanoclaw-group-init-settings-test`;
 
 vi.mock('./config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./config.js')>()),
-  DATA_DIR: '/tmp/nanoclaw-group-init-settings-test/data',
-  GROUPS_DIR: '/tmp/nanoclaw-group-init-settings-test/groups',
+  DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-group-init-settings-test/data`,
+  GROUPS_DIR: `${process.env.TEST_TMP}/nanoclaw-group-init-settings-test/groups`,
 }));
 
 vi.mock('./log.js', () => ({

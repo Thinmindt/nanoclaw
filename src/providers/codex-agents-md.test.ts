@@ -13,7 +13,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../config.js')>()),
-  DATA_DIR: '/tmp/nanoclaw-agents-md-test/data',
+  DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-agents-md-test/data`,
 }));
 
 import { composeGroupAgentsMd, CODEX_PROJECT_DOC_MAX_BYTES } from './codex-agents-md.js';
@@ -21,7 +21,7 @@ import { closeDb, createAgentGroup, initTestDb, runMigrations } from '../db/inde
 import { ensureContainerConfig, updateContainerConfigJson } from '../db/container-configs.js';
 import type { AgentGroup } from '../types.js';
 
-const TEST_ROOT = '/tmp/nanoclaw-agents-md-test';
+const TEST_ROOT = `${process.env.TEST_TMP}/nanoclaw-agents-md-test`;
 
 // This module is the pre-contract compatibility path: on a contract core the
 // canonical template composes AGENTS.md and this spec is never consulted, so

@@ -2,12 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-const TEST_ROOT = '/tmp/nanoclaw-provider-file-transformers-test';
+const TEST_ROOT = `${process.env.TEST_TMP}/nanoclaw-provider-file-transformers-test`;
 
 vi.mock('../config.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../config.js')>()),
-  DATA_DIR: '/tmp/nanoclaw-provider-file-transformers-test/data',
-  GROUPS_DIR: '/tmp/nanoclaw-provider-file-transformers-test/groups',
+  DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-provider-file-transformers-test/data`,
+  GROUPS_DIR: `${process.env.TEST_TMP}/nanoclaw-provider-file-transformers-test/groups`,
 }));
 
 vi.mock('../log.js', () => ({

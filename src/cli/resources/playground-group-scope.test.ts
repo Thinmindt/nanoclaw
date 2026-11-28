@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const ROOT = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { mkdtempSync } = require('fs') as typeof import('fs');
-  return mkdtempSync('/tmp/playground-scope-');
+  return mkdtempSync(`${process.env.TEST_TMP}/playground-scope-`);
 });
 
 // The edge the result goes out through: a waking message to the agent's session.

@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const TEST_ROOT = '/tmp/nanoclaw-project-doc-compose-test';
+const TEST_ROOT = `${process.env.TEST_TMP}/nanoclaw-project-doc-compose-test`;
 const REPO_ROOT = process.cwd();
 
 vi.mock('./log.js', () => ({

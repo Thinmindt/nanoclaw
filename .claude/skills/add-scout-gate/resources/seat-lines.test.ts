@@ -18,10 +18,10 @@ import { listSeatLines } from './seat-lines.js';
 
 vi.mock('../../config.js', async () => {
   const actual = await vi.importActual('../../config.js');
-  return { ...actual, DATA_DIR: '/tmp/nanoclaw-test-seat-lines' };
+  return { ...actual, DATA_DIR: `${process.env.TEST_TMP}/nanoclaw-test-seat-lines` };
 });
 
-const TEST_DIR = '/tmp/nanoclaw-test-seat-lines';
+const TEST_DIR = `${process.env.TEST_TMP}/nanoclaw-test-seat-lines`;
 const ARCHITECT = 'ag-architect';
 const SCOUT = 'ag-scout';
 const PM = 'ag-pm';
